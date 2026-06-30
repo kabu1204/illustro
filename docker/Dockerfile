@@ -2,13 +2,12 @@
 # Build from project root: docker build -t illustro:latest -f docker/Dockerfile .
 FROM python:3.11-slim-bookworm
 
-# System dependencies:
+# System dependencies (all deps ship as wheels, no compiler needed; skipping build-essential avoids -march=native cross-CPU issues):
 #  - libgomp1        : OpenMP runtime required by onnxruntime
 #  - ocl-icd-libopencl1 : OpenCL loader (needed for OpenVINO iGPU)
-#  - build-essential : Some packages (e.g. hnswlib) may need compilation if no prebuilt wheel
 #  - intel-opencl-icd: Intel iGPU compute driver (NEO), best-effort; falls back to OpenVINO CPU if unavailable
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgomp1 ocl-icd-libopencl1 build-essential \
+        libgomp1 ocl-icd-libopencl1 \
     && (apt-get install -y --no-install-recommends intel-opencl-icd \
         || echo "[warn] intel-opencl-icd not available, iGPU acceleration will fall back to OpenVINO CPU") \
     && rm -rf /var/lib/apt/lists/*

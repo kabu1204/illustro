@@ -22,10 +22,27 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(cfg: Config, worker=None) -> FastAPI:
+    import logging
     from contextlib import asynccontextmanager
+
+    log = logging.getLogger("illustro")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # One-time startup benchmark: verify numpy cosine search latency at 20k scale
+        try:
+            from illustro.index import benchmark_cosine
+            r = benchmark_cosine()
+            log.info(
+                "[startup] numpy cosine benchmark: %dx%d top-%d "
+                "mean=%.2fms p50=%.2fms p95=%.2fms (%d iterations)",
+                r["n"], r["dim"], r["k"],
+                r["mean_ms"], r["p50_ms"], r["p95_ms"],
+                r["iterations"],
+            )
+        except Exception as e:
+            log.warning("[startup] numpy cosine benchmark failed: %s", e)
+
         # uvicorn triggers shutdown on SIGTERM/SIGINT; gracefully stop the worker (interrupt current batch + sleep).
         # Newer FastAPI removed add_event_handler; use lifespan instead.
         yield

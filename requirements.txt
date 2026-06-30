@@ -13,7 +13,7 @@ onnxruntime-gpu>=1.17
 huggingface_hub>=0.23   # For downloading WD14 model
 
 # ---- Vector index ----
-hnswlib>=0.8.0
+# Uses numpy brute-force cosine (see illustro/index.py); fast enough at 20k scale, no hnswlib needed.
 
 # ---- Local server ----
 fastapi>=0.110

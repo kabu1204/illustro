@@ -9,6 +9,6 @@ tqdm>=4.66
 onnxruntime-openvino>=1.17
 
 huggingface_hub>=0.23
-hnswlib>=0.8.0
+# Vector retrieval uses numpy brute-force cosine (see illustro/index.py); no hnswlib needed.
 fastapi>=0.110
 uvicorn[standard]>=0.29
