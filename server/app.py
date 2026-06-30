@@ -22,7 +22,17 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(cfg: Config, worker=None) -> FastAPI:
-    app = FastAPI(title="illustro", version="0.1.0")
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # uvicorn triggers shutdown on SIGTERM/SIGINT; gracefully stop the worker (interrupt current batch + sleep).
+        # Newer FastAPI removed add_event_handler; use lifespan instead.
+        yield
+        if worker is not None:
+            worker.stop()
+
+    app = FastAPI(title="illustro", version="0.1.0", lifespan=lifespan)
     db = DB(cfg.db_path)
     store = VectorStore(cfg)
     searcher = Searcher(cfg, db, store)

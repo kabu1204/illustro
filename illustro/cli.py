@@ -120,10 +120,8 @@ def cmd_serve_all(args):
     cfg = _load(args)
     interval = args.interval if args.interval is not None else int(os.environ.get("SCAN_INTERVAL", "1800"))
     worker = None if args.no_worker else Worker(cfg, interval=interval)
+    # Graceful shutdown is handled by create_app's lifespan (newer FastAPI removed add_event_handler)
     app = create_app(cfg, worker=worker)
-    if worker is not None:
-        # uvicorn triggers shutdown on SIGTERM/SIGINT; gracefully stop the worker (interrupt current batch + sleep)
-        app.add_event_handler("shutdown", lambda: worker.stop())
     wmsg = "disabled" if args.no_worker else f"enabled (interval {interval}s)"
     print(f"Open http://{cfg.server.host}:{cfg.server.port}  Background processing: {wmsg}")
     uvicorn.run(app, host=cfg.server.host, port=cfg.server.port)
