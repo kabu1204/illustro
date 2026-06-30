@@ -2,7 +2,8 @@
 
 Design goals (for large collections, slow processing):
 - Stoppable anytime: build checks stop_check per batch; processed items are saved, resumable next run.
-- Pause = halt current processing and suspend; Resume = continue from untagged images.
+- Pause = abort the current round (unwinds build, releasing the tagger/model from memory);
+  Resume = start a fresh round (DB-level incrementality skips already-tagged images).
 - Graceful shutdown on process exit (docker stop / Ctrl+C), no hangs.
 - Status/progress queryable via API for UI display.
 """
@@ -77,7 +78,8 @@ class Worker:
             if self._pause.is_set():
                 with self._lock:
                     self.phase = "paused"
-                self._wake.wait(1.0)
+                # Block until resume() or stop() sets _wake; no busy polling.
+                self._wake.wait()
                 self._wake.clear()
                 continue
             with self._lock:
@@ -90,8 +92,10 @@ class Worker:
                 with self._lock:
                     self.last_error = f"{type(e).__name__}: {e}"
                 print(f"[worker] Processing error: {self.last_error}")
-            with self._lock:
-                self.last_run = time.time()
+            # Only record a real completion when the round wasn't interrupted by pause/stop
+            if not self._should_stop():
+                with self._lock:
+                    self.last_run = time.time()
             if self._stop.is_set():
                 break
             # Sleep that can be interrupted by pause/resume/run_now/stop
@@ -110,7 +114,7 @@ class Worker:
                 state = "stopped"
             elif self._pause.is_set():
                 state = "paused"
-            elif self.phase in ("scanning", "tagging", "indexing", "running"):
+            elif self.phase in ("scanning", "tagging", "indexing", "applying_zh", "running"):
                 state = "running"
             elif self.phase == "sleeping":
                 state = "sleeping"

@@ -110,9 +110,15 @@ def build(cfg: Config, stop_check: StopCheck = None, progress_cb: ProgressCb = N
             return overview(db)
         step_tag(cfg, db, store, stop_check=stop_check, progress_cb=progress_cb)
 
+        if stop_check():
+            return overview(db)
+        if progress_cb:
+            progress_cb("applying_zh", 0, 0)
         step_apply_zh(cfg, db)
 
         # Rebuild index if any new vectors exist (even if interrupted, processed items are indexed)
+        if stop_check():
+            return overview(db)
         if progress_cb:
             progress_cb("indexing", store.count, store.count)
         step_index(cfg, store)
