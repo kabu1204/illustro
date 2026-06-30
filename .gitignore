@@ -1,17 +1,13 @@
-# Generated artifacts / large files (467MB model, db, vectors, thumbnails)
-data/
+# Generated artifacts (model, db, vectors, thumbnails)
+/data/
+/images/
+# Local dev config; container uses docker/config.docker.yaml
+/config.yaml
 
-images/
-
-# Local dev config (contains real image paths on your machine); container uses docker/config.docker.yaml
-config.yaml
-
-# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
 
-# Misc
 .DS_Store
 *.log
