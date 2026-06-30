@@ -1,0 +1,14 @@
+# Container dependencies (N100 / no CUDA). Uses OpenVINO onnxruntime for iGPU + CPU.
+numpy>=1.24
+Pillow>=10.0
+pyyaml>=6.0
+tqdm>=4.66
+
+# OpenVINO onnxruntime (includes CPU backend + OpenVINOExecutionProvider).
+# Do NOT install onnxruntime / onnxruntime-gpu alongside this - they will conflict.
+onnxruntime-openvino>=1.17
+
+huggingface_hub>=0.23
+hnswlib>=0.8.0
+fastapi>=0.110
+uvicorn[standard]>=0.29

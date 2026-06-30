@@ -1,0 +1,20 @@
+# ---- Core ----
+numpy>=1.24
+Pillow>=10.0
+pyyaml>=6.0
+tqdm>=4.66
+
+# ---- Tagging / vectors (WD14 ONNX) ----
+# For GPU (RTX 4060, CUDA 12.x) use this:
+onnxruntime-gpu>=1.17
+# CPU only: switch to onnxruntime>=1.17
+# Windows without CUDA but with iGPU/dGPU: switch to onnxruntime-directml
+
+huggingface_hub>=0.23   # For downloading WD14 model
+
+# ---- Vector index ----
+hnswlib>=0.8.0
+
+# ---- Local server ----
+fastapi>=0.110
+uvicorn[standard]>=0.29

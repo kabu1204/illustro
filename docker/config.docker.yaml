@@ -1,0 +1,37 @@
+# ============ illustro container config (NAS / N100 / OpenVINO) ============
+# Mounted into the container at /app/config.yaml. Restart the container to apply changes - no rebuild needed.
+
+# Image mount point inside the container (compose mounts your NAS dataset read-only here)
+image_dirs:
+  - "/images"
+
+extensions: [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]
+
+# Persistent directory (compose mounts NAS appdata here): db / vectors / models / thumbnails
+data_dir: "/data"
+
+# N100 has no CUDA: use OpenVINO for iGPU + CPU
+device: "openvino"
+
+tagger:
+  hf_repo: "deepghs/wd14_tagger_with_embeddings"
+  onnx_file: "SmilingWolf/wd-swinv2-tagger-v3/model.onnx"
+  tags_csv: "SmilingWolf/wd-swinv2-tagger-v3/tags_info.csv"
+  # AUTO: use iGPU if available, otherwise fall back to CPU (most stable). Force iGPU with "GPU", force CPU with "CPU".
+  openvino_device: "AUTO"
+  general_threshold: 0.35
+  character_threshold: 0.75
+  # batch_size=1 is most stable with OpenVINO (model's native batch=1, avoids dynamic shape recompilation). Increase to 2-4 if iGPU has headroom.
+  batch_size: 1
+
+index:
+  space: "cosine"
+  ef_construction: 200
+  M: 16
+  ef_search: 64
+
+server:
+  host: "0.0.0.0"        # Must be 0.0.0.0 inside the container for external access
+  port: 8000
+  thumbnail_size: 360
+  page_size: 60

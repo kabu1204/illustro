@@ -1,0 +1,40 @@
+# illustro - Single-container deployment for TrueNAS SCALE (web + background processing in one process)
+#
+# Before deploying, build the image from the project root:
+#   docker build -t illustro:latest -f docker/Dockerfile .
+#
+# Update the 4 marked items below, then start with either:
+#   - SSH:  docker compose -f docker/docker-compose.yml up -d
+#   - UI:   Apps -> Discover -> top-right menu -> Install via YAML, paste this file
+#
+# Open http://NAS_IP:8501 in your browser.
+# Processing can be controlled anytime via the top-right buttons (Pause / Resume / Process Now),
+# or by running `docker stop` for a graceful shutdown.
+
+name: illustro
+
+services:
+  illustro:
+    image: illustro:latest
+    container_name: illustro
+    restart: unless-stopped
+
+    # Passthrough N100 iGPU to OpenVINO (falls back to CPU automatically if unavailable)
+    devices:
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - "107"          # Host render group GID. Find yours: stat -c '%g' /dev/dri/renderD128
+
+    ports:
+      - "8501:8000"    # Host port : container port
+
+    volumes:
+      - "/mnt/tank/pictures:/images:ro"      # Your illustration dataset (read-only)
+      - "/mnt/tank/apps/illustro:/data"      # Persistent storage: db, vectors, models, thumbnails, config
+      # The image ships with a default config. To override, place a config.yaml in the /data volume above.
+
+    environment:
+      - SCAN_INTERVAL=1800     # Incremental scan interval in seconds (default: 30 min)
+
+    # Allow the worker enough time to finish the current batch and flush to disk before being killed
+    stop_grace_period: 60s

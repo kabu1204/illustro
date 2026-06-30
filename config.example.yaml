@@ -1,0 +1,42 @@
+# ============ illustro configuration ============
+# Copy this file to config.yaml and modify as needed.
+
+# Your illustration directories (multiple allowed, scanned recursively). Use forward slashes or double backslashes on Windows.
+image_dirs:
+  - "D:/pixiv"
+  - "D:/illustrations"
+
+# File extensions to scan (lowercase)
+extensions: [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"]
+
+# Directory for generated database / vectors / thumbnails
+data_dir: "./data"
+
+# Runtime device: cuda (default, requires onnxruntime-gpu) / cpu / dml (DirectML)
+device: "cuda"
+
+# ---- WD14 tagging + image embeddings ----
+tagger:
+  # deepghs' WD14 model repo with embedding output (Apache-2.0).
+  # Paths below are pre-configured for the repo structure. Just run download-models (~468MB).
+  # To use the more accurate large model: replace wd-swinv2-tagger-v3 with wd-eva02-large-tagger-v3.
+  hf_repo: "deepghs/wd14_tagger_with_embeddings"
+  onnx_file: "SmilingWolf/wd-swinv2-tagger-v3/model.onnx"
+  tags_csv: "SmilingWolf/wd-swinv2-tagger-v3/tags_info.csv"
+  general_threshold: 0.35                    # General tag confidence threshold
+  character_threshold: 0.75                  # Character tag confidence threshold
+  batch_size: 8                              # Recommended 8-16 for RTX 4060 8GB
+
+# ---- Vector index (hnswlib) ----
+index:
+  space: "cosine"
+  ef_construction: 200
+  M: 16
+  ef_search: 64
+
+# ---- Local server ----
+server:
+  host: "127.0.0.1"
+  port: 8000
+  thumbnail_size: 360      # Thumbnail edge length (px)
+  page_size: 60            # Images per page
