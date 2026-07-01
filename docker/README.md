@@ -56,9 +56,26 @@ the contents of `docker-compose.yml` (image must already be built via `docker bu
 Open `http://<NAS_IP>:8501` in your browser.
 
 - On first start, the model is downloaded automatically (~468MB) and the ffdkj Chinese tag translation table (~30MB SQLite, filtered to ~10K WD14 tags) is fetched. Background tagging then begins. ~20k images on N100 takes a few hours (OpenVINO).
-- The ffdkj translation table (`tags_ffdkj.json`) is stored in `/data` and persists across restarts. It contains NSFW vocabulary and is **not** committed to the repo. To disable it, set `tags_zh_extra: []` in your config.
+- The ffdkj translation table (`tags_ffdkj.json`) is stored in `/data` and persists across restarts. On subsequent boots the cached SQLite is reused (no re-download); only the extraction step runs (~1s). It contains NSFW vocabulary and is **not** committed to the repo. To disable it, set `tags_zh_extra: []` in your config.
 - The top-right status bar shows: **Processing Tagging 1234/20000 - Pending N**, with **Pause / Resume / Process now** buttons.
 - To stop completely: `docker stop illustro` -- the worker finishes the current batch, flushes to disk, then exits (`stop_grace_period: 60s`). Next start resumes from untagged images.
+
+## 7. Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCAN_INTERVAL` | `1800` | Background scan interval in seconds (30 min). Set to e.g. `600` for more frequent incremental scans. |
+| `FFDKJ_REFRESH` | _(unset)_ | Set to `1` to force re-download of the ffdkj translation DB on next boot, even if a cached copy exists in `/data`. Useful to pick up the daily-updated translations from the upstream repo. Without this flag, restarts reuse the cached SQLite and only re-extract the WD14 subset (~1s). |
+
+Example — force refresh ffdkj translations:
+
+```bash
+docker run -d --name illustro -p 8501:8000 \
+  -v /mnt/tank/pictures:/images:ro \
+  -v /mnt/tank/apps/illustro:/data \
+  -e FFDKJ_REFRESH=1 \
+  illustro:latest
+```
 
 ## About iGPU acceleration
 
