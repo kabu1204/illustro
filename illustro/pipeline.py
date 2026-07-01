@@ -99,11 +99,24 @@ def step_index(cfg: Config, store: VectorStore) -> None:
 
 
 def build(cfg: Config, stop_check: StopCheck = None, progress_cb: ProgressCb = None) -> dict:
-    """All-in-one: scan -> tag -> apply Chinese table -> build index. Checks for interruption before each step."""
+    """All-in-one: apply zh -> scan -> tag -> apply zh (new tags) -> build index.
+
+    step_apply_zh runs twice: once at the start (updates translations for
+    already-existing tags, so new translations take effect immediately even
+    if tagging takes hours or gets interrupted), and once after tagging
+    (catches tags created during this round).
+    """
     stop_check = stop_check or _noop_stop
     db = DB(cfg.db_path)
     store = VectorStore(cfg)
     try:
+        # Apply zh translations early so they're visible even if tagging is slow/interrupted
+        if stop_check():
+            return overview(db)
+        if progress_cb:
+            progress_cb("applying_zh", 0, 0)
+        step_apply_zh(cfg, db)
+
         if stop_check():
             return overview(db)
         step_scan(cfg, db, stop_check=stop_check, progress_cb=progress_cb)
@@ -112,6 +125,7 @@ def build(cfg: Config, stop_check: StopCheck = None, progress_cb: ProgressCb = N
             return overview(db)
         step_tag(cfg, db, store, stop_check=stop_check, progress_cb=progress_cb)
 
+        # Re-apply zh for any tags created during this round's tagging
         if stop_check():
             return overview(db)
         if progress_cb:
