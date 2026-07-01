@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db-cache", type=Path, default=None, help="Local cache for downloaded SQLite")
     p.add_argument("--output", "-o", type=Path, default=None, help="Output JSON path")
     p.add_argument("--no-download", action="store_true", help="Reuse the cached DB instead of re-downloading")
+    p.add_argument("--force", action="store_true", help="Force re-download even if cached DB exists")
     p.add_argument("--merge", action="store_true", help="Merge result into tags_zh.json (ffdkj wins on conflict)")
     args = p.parse_args(argv)
 
@@ -126,11 +127,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # --- Download (or reuse) ---
-    if args.no_download:
-        if not db_cache.exists():
-            print(f"[!] --no-download but cache missing: {db_cache}", file=sys.stderr)
-            return 1
-        print(f"[*] Reusing cached DB: {db_cache}")
+    if args.force:
+        print(f"[*] --force: re-downloading ffdkj DB")
+        download_db(db_cache)
+    elif db_cache.exists() and db_cache.stat().st_size > 0:
+        print(f"[*] Cached DB exists, skipping download: {db_cache}")
+    elif args.no_download:
+        print(f"[!] --no-download but cache missing: {db_cache}", file=sys.stderr)
+        return 1
     else:
         download_db(db_cache)
 
