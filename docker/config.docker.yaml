@@ -23,8 +23,9 @@ tagger:
   hf_repo: "deepghs/wd14_tagger_with_embeddings"
   onnx_file: "SmilingWolf/wd-swinv2-tagger-v3/model.onnx"
   tags_csv: "SmilingWolf/wd-swinv2-tagger-v3/tags_info.csv"
-  # AUTO: use iGPU if available, otherwise fall back to CPU (most stable). Force iGPU with "GPU", force CPU with "CPU".
-  openvino_device: "AUTO"
+  # GPU: use N100 iGPU directly. AUTO sometimes picks CPU on N100; GPU is more reliable.
+  # If iGPU is unavailable (no /dev/dri passthrough), set to "CPU" instead.
+  openvino_device: "GPU"
   general_threshold: 0.35
   character_threshold: 0.75
   # batch_size=1 is most stable with OpenVINO (model's native batch=1, avoids dynamic shape recompilation). Increase to 2-4 if iGPU has headroom.

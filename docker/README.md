@@ -79,8 +79,8 @@ docker run -d --name illustro -p 8501:8000 \
 
 ## About iGPU acceleration
 
-`config.yaml`'s `tagger.openvino_device` defaults to `AUTO`: uses iGPU if available (container can access `/dev/dri`),
-otherwise falls back to OpenVINO CPU automatically -- **no crashes**. Force iGPU with `GPU`, force CPU with `CPU`.
+`config.yaml`'s `tagger.openvino_device` defaults to `GPU`: uses the N100 iGPU directly.
+If the iGPU is unavailable (no `/dev/dri` passthrough), set it to `CPU` instead.
 
 If the log shows `[tagger] Execution backend: OpenVINOExecutionProvider (device_type=...)`, OpenVINO is active.
 If iGPU isn't being used, verify: compose has `devices: /dev/dri`, `group_add` GID is correct, and `intel-opencl-icd` is installed in the image.
