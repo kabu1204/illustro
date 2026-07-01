@@ -368,7 +368,6 @@ function renderWorkerKpis(d) {
   const errEl = document.getElementById('workerError');
   errEl.innerHTML = w.last_error ? `<div class="err-box">Last error: ${w.last_error}</div>` : '';
   // Worker control buttons
-  const ctrl = document.getElementById('workerControls');
   let btns = '';
   if (w.state === 'paused') {
     btns = `<button class="primary" onclick="monitorWorkerAction('resume')">Resume</button>`;
