@@ -1,0 +1,29 @@
+# illustro · SSH 直跑版（绕开 TrueNAS App 系统/catalog）
+# 用法：scp 到 NAS（如 /mnt/tank/apps/illustro/docker-compose.yml），改 ▶ 三处，然后：
+#   cd /mnt/tank/apps/illustro && docker compose up -d && docker compose logs -f
+# 浏览器开 http://NAS_IP:8501
+
+services:
+  illustro:
+    image: ghcr.io/<your-username>/illustro:latest   # ▶ 改成你的 ghcr 镜像
+    container_name: illustro
+    restart: unless-stopped
+
+    # 核显透传（OpenVINO 用）。不想用核显就删掉 devices + group_add 两段，AUTO 会退 CPU。
+    devices:
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - "107"                       # ▶ stat -c '%g' /dev/dri/renderD128
+
+    ports:
+      - "8501:8000"
+
+    volumes:
+      - "/mnt/tank/pictures:/images:ro"    # ▶ 你的图片数据集（只读）
+      - "/mnt/tank/apps/illustro:/data"    # ▶ 持久化：db/向量/模型/缩略图
+
+    environment:
+      - SCAN_INTERVAL=1800
+      # - HF_ENDPOINT=https://hf-mirror.com   # 国内下模型慢就取消注释
+
+    stop_grace_period: 60s

@@ -13,6 +13,12 @@ data_dir: "/data"
 # N100 has no CUDA: use OpenVINO for iGPU + CPU
 device: "openvino"
 
+# Extra Chinese translation files (under data_dir) layered on top of the built-in
+# tags_zh.json at runtime. The entrypoint auto-downloads tags_ffdkj.json on first boot.
+# To disable: set to an empty list []
+tags_zh_extra:
+  - "tags_ffdkj.json"
+
 tagger:
   hf_repo: "deepghs/wd14_tagger_with_embeddings"
   onnx_file: "SmilingWolf/wd-swinv2-tagger-v3/model.onnx"

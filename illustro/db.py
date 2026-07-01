@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Iterable, Optional
@@ -59,9 +60,10 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
 class DB:
     def __init__(self, path: str | Path):
         # check_same_thread=False: FastAPI handles requests in a thread pool, so cross-thread connection reuse is needed.
-        # This tool is single-user with read-only access during serving (writes only during build), so sharing is safe.
+        # A lock serializes access so concurrent requests don't corrupt the shared connection.
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._lock = threading.Lock()
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=NORMAL;")
         self.conn.executescript(SCHEMA)
@@ -148,7 +150,8 @@ class DB:
     # ---------- Misc ----------
     def count(self, where: str = "") -> int:
         q = "SELECT COUNT(*) c FROM images" + (f" WHERE {where}" if where else "")
-        return self.conn.execute(q).fetchone()["c"]
+        with self._lock:
+            return self.conn.execute(q).fetchone()["c"]
 
     def set_meta(self, k: str, v: str):
         self.conn.execute("INSERT OR REPLACE INTO meta (k,v) VALUES (?,?)", (k, v))
@@ -158,7 +161,8 @@ class DB:
         return r["v"] if r else default
 
     def commit(self):
-        self.conn.commit()
+        with self._lock:
+            self.conn.commit()
 
     def close(self):
         self.conn.commit()

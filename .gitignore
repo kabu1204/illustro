@@ -4,6 +4,12 @@
 # Local dev config; container uses docker/config.docker.yaml
 /config.yaml
 
+# Downloaded models (regenerated via download-models)
+illustro/data/models/
+
+# translate_tags partial progress (temp, resumable)
+illustro/data/tags_zh.json.partial.json
+
 __pycache__/
 *.pyc
 .venv/

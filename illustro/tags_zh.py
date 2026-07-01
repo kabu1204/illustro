@@ -18,6 +18,22 @@ def load_zh_table(path: str | Path) -> dict[str, str]:
     return {k: v for k, v in raw.items() if not k.startswith("_")}
 
 
+def load_merged_zh_table(base_path: str | Path, extra_paths: list[str | Path]) -> dict[str, str]:
+    """Load the base zh table, then layer each extra file on top (later wins on conflict).
+
+    Missing extra files are silently skipped — callers should pre-filter, but this
+    adds a safety net. The base file is required.
+    """
+    table = load_zh_table(base_path)
+    for p in extra_paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        extra = load_zh_table(p)
+        table.update(extra)
+    return table
+
+
 def build_reverse(table: dict[str, str]) -> dict[str, str]:
     """Chinese/alias -> English tag. If multiple English tags map to the same Chinese, the last one wins."""
     rev: dict[str, str] = {}

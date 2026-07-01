@@ -12,5 +12,9 @@ echo "[entrypoint] Preparing model (first run downloads ~468MB; skips if already
 python -m illustro.cli --config "$CFG" download-models || \
   echo "[entrypoint] Model download failed for now; web will still start. Worker will retry automatically once online."
 
+echo "[entrypoint] Fetching ffdkj Chinese tag translations (~30MB SQLite, filtered to WD14 tag set)..."
+python -m illustro.import_ffdkj --config "$CFG" 2>&1 | sed 's/^/[ffdkj] /' || \
+  echo "[entrypoint] ffdkj download failed; falling back to built-in tags_zh.json only."
+
 echo "[entrypoint] Starting web + background worker"
 exec python -m illustro.cli --config "$CFG" serve-all

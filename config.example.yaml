@@ -15,6 +15,13 @@ data_dir: "./data"
 # Runtime device: cuda (default, requires onnxruntime-gpu) / cpu / dml (DirectML)
 device: "cuda"
 
+# Extra Chinese translation files (under data_dir) layered on top of the built-in
+# tags_zh.json at runtime. Later files override earlier ones. Missing files are
+# silently skipped. Use this to load large community tables without committing them.
+#   Generate tags_ffdkj.json:  python -m illustro.import_ffdkj
+tags_zh_extra:
+  - "tags_ffdkj.json"
+
 # ---- WD14 tagging + image embeddings ----
 tagger:
   # deepghs' WD14 model repo with embedding output (Apache-2.0).

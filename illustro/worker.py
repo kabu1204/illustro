@@ -18,6 +18,9 @@ from .pipeline import build
 
 
 class Worker:
+    # Maximum number of round summaries kept in the in-memory ring buffer
+    MAX_ROUNDS = 50
+
     def __init__(self, cfg: Config, interval: int = 1800, autostart: bool = True):
         self.cfg = cfg
         self.interval = interval
@@ -32,6 +35,9 @@ class Worker:
         self.total = 0
         self.last_run = 0.0
         self.last_error: Optional[str] = None
+        # Round tracking for monitoring
+        self._round_start = 0.0            # Wall-clock start of the current round
+        self._rounds: list[dict] = []      # Ring buffer of completed round summaries
         if autostart:
             self.start()
 
@@ -85,17 +91,34 @@ class Worker:
             with self._lock:
                 self.phase = "running"
                 self.processed = 0
+                self.total = 0
                 self.last_error = None
+                self._round_start = time.time()
+            round_processed = 0
             try:
                 build(self.cfg, stop_check=self._should_stop, progress_cb=self._progress)
             except Exception as e:  # Don't let the thread die on errors; log and continue the loop
                 with self._lock:
                     self.last_error = f"{type(e).__name__}: {e}"
                 print(f"[worker] Processing error: {self.last_error}")
-            # Only record a real completion when the round wasn't interrupted by pause/stop
-            if not self._should_stop():
-                with self._lock:
-                    self.last_run = time.time()
+            interrupted = self._should_stop()
+            with self._lock:
+                round_end = time.time()
+                round_processed = self.processed
+                # Only record a real completion when the round wasn't interrupted by pause/stop
+                if not interrupted:
+                    self.last_run = round_end
+                # Append round summary to ring buffer (covers both completed and interrupted rounds)
+                self._rounds.append({
+                    "start": self._round_start,
+                    "end": round_end,
+                    "duration_sec": round(round_end - self._round_start, 2),
+                    "processed": round_processed,
+                    "interrupted": interrupted,
+                    "error": self.last_error,
+                })
+                if len(self._rounds) > self.MAX_ROUNDS:
+                    self._rounds = self._rounds[-self.MAX_ROUNDS:]
             if self._stop.is_set():
                 break
             # Sleep that can be interrupted by pause/resume/run_now/stop
@@ -130,4 +153,39 @@ class Worker:
                 "last_run": self.last_run,
                 "last_error": self.last_error,
                 "interval": self.interval,
+            }
+
+    def monitor_status(self) -> dict:
+        """Extended status for the monitoring dashboard: adds round timing, throughput, ETA, and history."""
+        with self._lock:
+            alive = bool(self._thread and self._thread.is_alive())
+            if self._stop.is_set():
+                state = "stopped"
+            elif self._pause.is_set():
+                state = "paused"
+            elif self.phase in ("scanning", "tagging", "indexing", "applying_zh", "running"):
+                state = "running"
+            elif self.phase == "sleeping":
+                state = "sleeping"
+            else:
+                state = "idle"
+            now = time.time()
+            elapsed = now - self._round_start if self._round_start else 0.0
+            throughput = (self.processed / elapsed * 60) if elapsed > 0.1 and self.processed > 0 else 0.0
+            eta = ((self.total - self.processed) / throughput * 60) if throughput > 0 and self.total > self.processed else 0.0
+            return {
+                "state": state,
+                "phase": self.phase,
+                "paused": self._pause.is_set(),
+                "alive": alive,
+                "processed": self.processed,
+                "progress_total": self.total,
+                "last_run": self.last_run,
+                "last_error": self.last_error,
+                "interval": self.interval,
+                "round_start": self._round_start,
+                "elapsed_sec": round(elapsed, 2),
+                "throughput_img_min": round(throughput, 1),
+                "eta_sec": round(eta, 1),
+                "rounds": list(self._rounds),
             }

@@ -17,7 +17,7 @@ from .config import Config
 from .db import DB
 from .index import VectorStore
 from .scan import scan
-from .tags_zh import load_zh_table
+from .tags_zh import load_merged_zh_table
 
 StopCheck = Optional[Callable[[], bool]]
 ProgressCb = Optional[Callable[[str, int, int], None]]
@@ -86,9 +86,11 @@ def step_tag(
 
 
 def step_apply_zh(cfg: Config, db: DB) -> int:
-    table = load_zh_table(cfg.tags_zh_path)
+    table = load_merged_zh_table(cfg.tags_zh_path, cfg.tags_zh_extra_paths)
     n = db.apply_zh_table(table)
-    print(f"[zh] Wrote {n} Chinese tag translations.")
+    extra_count = len(cfg.tags_zh_extra_paths)
+    suffix = f" (+{extra_count} extra table{'s' if extra_count != 1 else ''})" if extra_count else ""
+    print(f"[zh] Wrote {n} Chinese tag translations{suffix}.")
     return n
 
 

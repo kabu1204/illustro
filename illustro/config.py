@@ -47,6 +47,11 @@ class Config:
     )
     data_dir: str = "./data"
     device: str = "cuda"
+    # Extra Chinese translation files (under data_dir) layered on top of the base
+    # tags_zh.json at runtime. Later files override earlier ones. Files that don't
+    # exist are silently skipped. Use this to load large NSFW tables (e.g. ffdkj)
+    # without committing them to the repo.
+    tags_zh_extra: list[str] = field(default_factory=lambda: ["tags_ffdkj.json"])
     tagger: TaggerCfg = field(default_factory=TaggerCfg)
     index: IndexCfg = field(default_factory=IndexCfg)
     server: ServerCfg = field(default_factory=ServerCfg)
@@ -88,6 +93,11 @@ class Config:
         custom = self.data_path / "tags_zh.json"
         return custom if custom.exists() else (ROOT / "illustro" / "data" / "tags_zh.json")
 
+    @property
+    def tags_zh_extra_paths(self) -> list[Path]:
+        """Resolve extra translation file paths under data_dir, skipping missing ones."""
+        return [self.data_path / name for name in self.tags_zh_extra if (self.data_path / name).exists()]
+
 
 def _merge(dc: Any, raw: dict) -> Any:
     """Merge a yaml dict into a dataclass instance (one level of nesting)."""
@@ -111,7 +121,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         cfg.tagger = _merge(TaggerCfg(), raw.get("tagger", {}))
         cfg.index = _merge(IndexCfg(), raw.get("index", {}))
         cfg.server = _merge(ServerCfg(), raw.get("server", {}))
-        for k in ("image_dirs", "extensions", "data_dir", "device"):
+        for k in ("image_dirs", "extensions", "data_dir", "device", "tags_zh_extra"):
             if k in raw:
                 setattr(cfg, k, raw[k])
     else:

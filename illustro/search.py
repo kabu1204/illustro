@@ -12,7 +12,7 @@ from typing import Optional
 from .config import Config
 from .db import DB
 from .index import VectorStore
-from .tags_zh import build_reverse, load_zh_table, parse_query
+from .tags_zh import build_reverse, load_merged_zh_table, parse_query
 
 
 @dataclass
@@ -29,7 +29,7 @@ class Searcher:
         self.cfg = cfg
         self.db = db
         self.store = store
-        table = load_zh_table(cfg.tags_zh_path)
+        table = load_merged_zh_table(cfg.tags_zh_path, cfg.tags_zh_extra_paths)
         self.zh2en = build_reverse(table)
         self.known_en = {r["name"] for r in db.conn.execute("SELECT name FROM tags")}
 

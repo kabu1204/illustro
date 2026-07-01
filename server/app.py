@@ -1,10 +1,12 @@
-"""FastAPI local server: search / similar / thumbnails / stats.
+"""FastAPI local server: search / similar / thumbnails / stats / monitor.
 
 Start: python -m illustro.cli serve   then open http://127.0.0.1:8000
 """
 from __future__ import annotations
 
 import io
+import time
+from collections import deque
 from pathlib import Path
 
 from fastapi import FastAPI, Query
@@ -20,24 +22,53 @@ from illustro.search import Searcher, autocomplete
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Maximum number of per-query latency samples kept in memory
+MAX_QUERY_SAMPLES = 100
+
+
+def _percentile(sorted_vals: list[float], p: float) -> float:
+    if not sorted_vals:
+        return 0.0
+    idx = min(int(len(sorted_vals) * p), len(sorted_vals) - 1)
+    return sorted_vals[idx]
+
+
+def _latency_stats(samples: list[dict], endpoint: str) -> dict:
+    vals = sorted(s["latency_ms"] for s in samples if s["endpoint"] == endpoint)
+    if not vals:
+        return {"count": 0, "mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "min_ms": 0.0, "max_ms": 0.0}
+    return {
+        "count": len(vals),
+        "mean_ms": round(sum(vals) / len(vals), 2),
+        "p50_ms": round(_percentile(vals, 0.5), 2),
+        "p95_ms": round(_percentile(vals, 0.95), 2),
+        "min_ms": round(vals[0], 2),
+        "max_ms": round(vals[-1], 2),
+    }
+
 
 def create_app(cfg: Config, worker=None) -> FastAPI:
     from contextlib import asynccontextmanager
 
+    # In-memory query latency ring buffer (shared across handlers via closure)
+    query_latencies: deque[dict] = deque(maxlen=MAX_QUERY_SAMPLES)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # One-time startup benchmark: verify numpy cosine search latency at 20k scale
+        bench_result = None
         try:
             from illustro.index import benchmark_cosine
-            r = benchmark_cosine()
+            bench_result = benchmark_cosine()
             print(
-                f"[startup] numpy cosine benchmark: {r['n']}x{r['dim']} top-{r['k']} "
-                f"mean={r['mean_ms']:.2f}ms p50={r['p50_ms']:.2f}ms p95={r['p95_ms']:.2f}ms "
-                f"({r['iterations']} iterations)",
+                f"[startup] numpy cosine benchmark: {bench_result['n']}x{bench_result['dim']} top-{bench_result['k']} "
+                f"mean={bench_result['mean_ms']:.2f}ms p50={bench_result['p50_ms']:.2f}ms p95={bench_result['p95_ms']:.2f}ms "
+                f"({bench_result['iterations']} iterations)",
                 flush=True,
             )
         except Exception as e:
             print(f"[startup] numpy cosine benchmark failed: {e}", flush=True)
+        _app.state.benchmark = bench_result
 
         # uvicorn triggers shutdown on SIGTERM/SIGINT; gracefully stop the worker (interrupt current batch + sleep).
         # Newer FastAPI removed add_event_handler; use lifespan instead.
@@ -61,10 +92,12 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
         rating: str = "",
         page: int = 1,
     ):
+        t0 = time.perf_counter()
         inc = [x for x in include.split(",") if x]
         exc = [x for x in exclude.split(",") if x]
         rat = [x for x in rating.split(",") if x]
         res = searcher.search(q, include=inc, exclude=exc, rating=rat or None, page=page)
+        query_latencies.append({"endpoint": "search", "latency_ms": (time.perf_counter() - t0) * 1000, "ts": time.time()})
         return JSONResponse(
             {
                 "total": res.total,
@@ -79,7 +112,10 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
 
     @app.get("/api/similar")
     def api_similar(id: int, k: int = 30):
-        return JSONResponse({"images": searcher.similar(id, k=k)})
+        t0 = time.perf_counter()
+        result = searcher.similar(id, k=k)
+        query_latencies.append({"endpoint": "similar", "latency_ms": (time.perf_counter() - t0) * 1000, "ts": time.time()})
+        return JSONResponse({"images": result})
 
     @app.get("/api/autocomplete")
     def api_autocomplete(q: str = Query("")):
@@ -127,6 +163,24 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
         else:
             return JSONResponse({"error": f"Unknown action: {action}"}, status_code=400)
         return JSONResponse(worker_payload())
+
+    # ---- Monitoring dashboard ----
+    @app.get("/api/monitor")
+    def api_monitor():
+        samples = list(query_latencies)
+        return JSONResponse({
+            "worker": worker.monitor_status() if worker is not None else None,
+            "db_total": db.count(),
+            "db_tagged": db.count("tagged=1"),
+            "benchmark": getattr(app.state, "benchmark", None),
+            "query_latency": {
+                "recent": samples,
+                "stats": {
+                    "search": _latency_stats(samples, "search"),
+                    "similar": _latency_stats(samples, "similar"),
+                },
+            },
+        })
 
     @app.get("/api/image/{image_id}")
     def api_image(image_id: int):
