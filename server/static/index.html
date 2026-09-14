@@ -183,7 +183,8 @@
     <div id="upDisabled" class="err-box" style="display:none"></div>
     <div id="upNote" class="upnote" style="display:none"></div>
     <div class="row">
-      <button onclick="document.getElementById('upFolder').click()">📂 Pick folder</button>
+      <button onclick="pickFolder()">📂 Pick folder</button>
+      <button id="upResumeBtn" onclick="resumeFolder()" style="display:none">↻ Continue last folder</button>
       <button onclick="document.getElementById('upFiles').click()">🖼 Pick images</button>
       <span style="flex:1"></span>
       <input id="upToken" type="password" placeholder="API token (if set)" oninput="saveToken(this.value)">
@@ -524,11 +525,17 @@ function renderLatencyStats(stats) {
 // - Dedup at three levels: (1) per-file metadata cache (name|size|mtime -> hash) for instant
 //   re-picks, (2) localStorage ledger of uploaded hashes, (3) batch /api/sync/check against
 //   the server before uploading. An interrupted run never re-uploads a finished file.
+// - Folder picking prefers the File System Access API (showDirectoryPicker): entries are
+//   enumerated lazily (names only) with visible progress, and the handle is persisted so
+//   resuming an interrupted backfill is one tap. <input webkitdirectory> is the fallback —
+//   on Android it must stat every file via SAF before the change event fires, which can
+//   look frozen for minutes on huge folders.
 // - crypto.subtle is only available on secure contexts (https / localhost); plain-HTTP LAN
 //   falls back to the pure-JS streaming Sha256 from sha256.js.
 const UP = {
   queue: [], running: false, stopReq: false, sessionStored: 0,
   info: null, wakeLock: null, ledger: new Set(), meta: {}, renderT: null,
+  seenMk: new Set(), lastDir: null, resumeChecked: false,
 };
 const UP_STATUSES = ['pending', 'hashing', 'ready', 'uploading', 'done', 'dup', 'skip', 'error'];
 const UP_LABEL = { pending: 'queued', hashing: 'hashing', ready: 'new', uploading: 'uploading',
@@ -570,6 +577,16 @@ async function idbSet(k, v) {
   const db = await upIdb(); if (!db) return;
   db.transaction('kv', 'readwrite').objectStore('kv').put(v, k);
 }
+async function idbGet(k) {
+  const db = await upIdb(); if (!db) return null;
+  return new Promise(res => {
+    try {
+      const t = db.transaction('kv').objectStore('kv').get(k);
+      t.onsuccess = () => res(t.result ?? null);
+      t.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
 function saveToken(v) {
   localStorage.setItem('illustro_up_token', v);
   idbSet('token', v);
@@ -589,6 +606,18 @@ async function openUpload() {
     dis.style.display = 'block';
     dis.textContent = 'Sync is disabled on the server. Set sync.enabled=true in config.yaml.';
   } else dis.style.display = 'none';
+  if (!UP.resumeChecked) {
+    UP.resumeChecked = true;
+    try {
+      const h = await idbGet('lastDirHandle');
+      if (h) {
+        UP.lastDir = h;
+        const b = document.getElementById('upResumeBtn');
+        b.style.display = '';
+        b.textContent = '↻ Continue "' + h.name + '"';
+      }
+    } catch (e) {}
+  }
   renderUp();
 }
 function closeUpload() { document.getElementById('upload').classList.remove('open'); }
@@ -597,17 +626,100 @@ function upNote(msg) { const el = document.getElementById('upNote'); el.textCont
 document.getElementById('upFolder').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
 document.getElementById('upFiles').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
 
-function addFiles(files) {
+function upScanNote(msg) {
+  document.getElementById('upSummary').innerHTML = `<span>${msg}</span>`;
+}
+const upYield = () => new Promise(r => setTimeout(r, 0));
+
+async function pickFolder() {
+  if (window.showDirectoryPicker) {
+    try {
+      const dir = await window.showDirectoryPicker({ id: 'illustro-uploads', mode: 'read' });
+      try { await idbSet('lastDirHandle', dir); } catch (e) {}
+      UP.lastDir = dir;
+      const b = document.getElementById('upResumeBtn');
+      b.style.display = ''; b.textContent = '↻ Continue "' + dir.name + '"';
+      await enqueueFromDir(dir);
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // user cancelled the picker
+      console.warn('showDirectoryPicker failed, using input fallback', e);
+    }
+  }
+  document.getElementById('upFolder').click();   // fallback: webkitdirectory input
+}
+
+async function resumeFolder() {
+  const h = UP.lastDir;
+  if (!h) { upNote('No stored folder — pick one.'); return; }
+  let perm = 'granted';
+  try {
+    if (h.queryPermission && (await h.queryPermission({ mode: 'read' })) !== 'granted') {
+      perm = await h.requestPermission({ mode: 'read' });   // button click = user gesture
+    }
+  } catch (e) { perm = 'denied'; }
+  if (perm !== 'granted') { upNote('Folder permission was not granted — pick the folder again.'); return; }
+  await enqueueFromDir(h);
+}
+
+async function enqueueFromDir(dir) {
   const exts = new Set((UP.info && UP.info.extensions) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']);
-  let ignored = 0, known = 0;
-  for (const f of files) {
+  const items = [];
+  let scanned = 0;
+  upScanNote('Scanning folder…');
+  // Non-recursive entries() would miss subfolders (DCIM/Camera etc.) — walk depth-first.
+  const walk = async (d, depth) => {
+    if (depth > 12) return;
+    let iter;
+    try { iter = d.values(); } catch (e) { return; }
+    for (;;) {
+      let res;
+      try { res = await iter.next(); } catch (e) { return; }
+      if (res.done) break;
+      const h = res.value;
+      scanned++;
+      if (h.kind === 'file') {
+        const dot = h.name.lastIndexOf('.');
+        if (dot > 0 && exts.has(h.name.slice(dot).toLowerCase())) {
+          // Lazy: store the handle only — name/size/mtime are fetched at processing time.
+          items.push({ f: null, handle: h, name: h.name, size: null, mk: null,
+            hash: null, status: 'pending', tries: 0, prog: 0, err: '' });
+        }
+      } else if (h.kind === 'directory') {
+        await walk(h, depth + 1);
+      }
+      if (scanned % 200 === 0) {
+        upScanNote(`Scanning folder… ${scanned} entries, ${items.length} images`);
+        await upYield();
+      }
+    }
+  };
+  await walk(dir, 0);
+  for (const it of items) UP.queue.push(it);
+  if (scanned) upNote(`Folder scanned: ${items.length} image(s) queued from ${scanned} entries.`);
+  renderUp();
+}
+
+async function addFiles(files) {
+  const exts = new Set((UP.info && UP.info.extensions) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']);
+  let known = 0;
+  const total = files.length;
+  for (let idx = 0; idx < total; idx++) {
+    const f = files[idx];
     const dot = f.name.lastIndexOf('.');
-    if (dot < 0 || !exts.has(f.name.slice(dot).toLowerCase())) { ignored++; continue; }
-    const rec = UP.meta[upMetaKey(f)];
+    if (dot < 0 || !exts.has(f.name.slice(dot).toLowerCase())) continue;
+    const mk = upMetaKey(f);
+    const rec = UP.meta[mk];
     if (rec && rec.done) { known++; continue; }              // same file seen before: skip without hashing
-    if (UP.queue.some(i => i.mk === upMetaKey(f) && UP_STATUSES.indexOf(i.status) < 4)) continue; // already queued
-    UP.queue.push({ f, name: f.name, size: f.size, mk: upMetaKey(f), hash: rec ? rec.h : null,
-      status: 'pending', tries: 0, prog: 0, err: '' });
+    if (UP.seenMk.has(mk)) continue;                         // already queued this session
+    UP.seenMk.add(mk);
+    UP.queue.push({ f, handle: null, name: f.name, size: f.size, mk,
+      hash: rec ? rec.h : null, status: 'pending', tries: 0, prog: 0, err: '' });
+    // Yield + progress every 200 files so the page stays responsive on huge picks
+    if (idx % 200 === 199) {
+      upScanNote(`Reading files… ${idx + 1}/${total}` + (known ? ` · ${known} already uploaded` : ''));
+      await upYield();
+    }
   }
   if (known) upNote(`${known} file(s) already uploaded before — skipped instantly.`);
   renderUp();
@@ -629,7 +741,7 @@ function scheduleRender() {
   UP.renderT = setTimeout(() => { UP.renderT = null; renderUp(); }, 250);
 }
 
-function fmtMB(b) { return b >= (1 << 30) ? (b / (1 << 30)).toFixed(2) + ' GB' : (b / (1 << 20)).toFixed(1) + ' MB'; }
+function fmtMB(b) { return !b ? '—' : b >= (1 << 30) ? (b / (1 << 30)).toFixed(2) + ' GB' : (b / (1 << 20)).toFixed(1) + ' MB'; }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function renderUp() {
@@ -638,9 +750,9 @@ function renderUp() {
   for (const it of UP.queue) {
     n[it.status]++;
     if (it.status === 'skip') continue;
-    bytesTotal += it.size;
-    if (it.status === 'done' || it.status === 'dup') bytesDone += it.size;
-    if (it.status === 'uploading') inflight += it.prog * it.size;
+    bytesTotal += it.size || 0;
+    if (it.status === 'done' || it.status === 'dup') bytesDone += it.size || 0;
+    if (it.status === 'uploading') inflight += it.prog * (it.size || 0);
   }
   const active = n.pending + n.hashing + n.ready + n.uploading;
   const el = document.getElementById('upSummary');
@@ -735,18 +847,31 @@ async function startUpload() {
   await acquireWake();
   const tok = localStorage.getItem('illustro_up_token') || '';
   try {
-    // Phase 1: hash everything pending (sequential: CPU/IO bound)
+    // Phase 1: hash everything pending (sequential: CPU/IO bound).
+    // Folder-picker items carry only a handle; the actual File (and its size/mtime)
+    // is fetched here — one file at a time, never the whole folder upfront.
     for (const it of UP.queue) {
       if (UP.stopReq) break;
       if (it.status !== 'pending') continue;
+      if (!it.f && it.handle) {
+        try { it.f = await it.handle.getFile(); }
+        catch (e) { it.status = 'error'; it.err = 'file unavailable'; continue; }
+        it.size = it.f.size;
+        it.mk = upMetaKey(it.f);
+        UP.seenMk.add(it.mk);
+        const rec = UP.meta[it.mk];
+        if (rec && rec.done) { it.status = 'skip'; scheduleRender(); continue; }  // uploaded in a previous session
+        if (rec && rec.h) it.hash = rec.h;
+      }
       if (!it.hash) {
         it.status = 'hashing'; scheduleRender();
         try { it.hash = await hashFile(it.f); }
         catch (e) { it.status = 'error'; it.err = 'hash failed'; continue; }
       }
-      if (UP.ledger.has(it.hash)) { it.status = 'skip'; finishItem(it, 'dup'); continue; }
+      if (UP.ledger.has(it.hash)) { finishItem(it, 'dup'); continue; }
       it.status = 'ready'; scheduleRender();
     }
+    renderUp();
     // Phase 2: batch server check -> mark everything the server already has
     const ready = UP.queue.filter(i => i.status === 'ready' && i.hash);
     for (let i = 0; i < ready.length && !UP.stopReq; i += 500) {

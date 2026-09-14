@@ -129,9 +129,10 @@ Push images from an Android phone into your library over LAN/VPN — no app need
 3. Files stream to the server inbox (verified by content hash; anything the server already has is skipped), and the background worker tags them automatically.
 
 Interruptions are cheap: the page holds a screen wake lock while the queue runs, but if the
-browser dies anyway, just re-pick the same folder — files already uploaded are recognized
+browser dies anyway, re-pick the same folder — files already uploaded are recognized
 (name+size+mtime, no hashing) and skipped instantly; the queue continues where it stopped.
-Worst-case repeated work is the single file that was in flight.
+Worst-case repeated work is the single file that was in flight. The **Continue last folder**
+button (shown after a first pick) resumes with a stored folder handle — one tap, no re-navigation.
 
 **Android share target**: in Chrome, menu → *Install app*. Afterwards *Share → illustro* from the
 gallery or any app uploads the images directly (works for multiple selected images).
