@@ -285,7 +285,7 @@ class UploadService : Service() {
                 var attempt = 0
                 while (true) {
                     try {
-                        val result = uploadOne(base, token, job.src.name, tmp, job.sha)
+                        val result = uploadOne(base, token, job.src, tmp, job.sha)
                         when (result) {
                             "stored" -> uploaded.incrementAndGet()
                             "duplicate" -> known.incrementAndGet()
@@ -321,11 +321,12 @@ class UploadService : Service() {
     }
 
     /** Returns "stored" | "duplicate" | "toolarge" | "unsupported"; throws on transient errors. */
-    private fun uploadOne(base: String, token: String, name: String, file: File, sha: String): String {
+    private fun uploadOne(base: String, token: String, src: Source, file: File, sha: String): String {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("sha256", sha)
-            .addFormDataPart("file", name, file.asRequestBody(OCTET))
+            .addFormDataPart("mtime_ms", src.mtime.toString())   // preserve original mtime server-side
+            .addFormDataPart("file", src.name, file.asRequestBody(OCTET))
             .build()
         val rb = Request.Builder().url("$base/api/sync/upload")
         if (token.isNotEmpty()) rb.header("X-API-Token", token)

@@ -153,7 +153,10 @@ sync:
 
 API: `POST /api/sync/check` (which of these sha256 hashes do you lack?) and
 `POST /api/sync/upload` (one file per request, streamed to disk, server-side hash verify,
-exact duplicates answered with `status=duplicate` and dropped).
+exact duplicates answered with `status=duplicate` and dropped). Uploads may include the
+original file's modification time (`mtime_ms`, epoch milliseconds) — the server stamps the
+stored file with it, so the library keeps "when was this saved" instead of "when was it
+uploaded" (records `added_at` separately).
 
 ## How Chinese search works
 

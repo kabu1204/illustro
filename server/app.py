@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
 import time
 import uuid
@@ -231,10 +232,13 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
     async def api_sync_upload(
         file: UploadFile = File(...),
         sha256: str = Form(default=""),
+        mtime_ms: str = Form(default=""),
         _: None = Depends(_check_sync_token),
     ):
         """One file per request. Streamed to disk (never buffered in RAM), hash-verified,
-        atomically renamed into the inbox. Exact duplicates are dropped (status=duplicate)."""
+        atomically renamed into the inbox. Exact duplicates are dropped (status=duplicate).
+        Optional mtime_ms (epoch milliseconds from the client) preserves the source file's
+        modification time so library date views reflect when images were saved, not uploaded."""
         if not cfg.sync.enabled:
             raise HTTPException(status_code=403, detail="Sync disabled")
         orig = Path(file.filename or "upload")
@@ -269,6 +273,13 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
             stem = _UNSAFE_FILENAME.sub("_", orig.stem).strip(". ")[:60] or "upload"
             dest = inbox / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{stem}{ext}"
             tmp.replace(dest)
+            # Preserve the client's original mtime (sanity-clamped); falls back to upload time.
+            try:
+                mtime = float(mtime_ms) / 1000.0
+                if 0 < mtime <= time.time() + 7 * 86400:
+                    os.utime(dest, (mtime, mtime))
+            except (TypeError, ValueError, OverflowError):
+                pass
             # Record after the rename lands: a crash here at worst allows a benign
             # duplicate on retry; recording first could reject content we never stored.
             db.record_sync_hash(digest)

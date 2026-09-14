@@ -39,6 +39,7 @@ async function handleShare(request) {
     for (const f of files) {
       const fd = new FormData();
       fd.append('file', f, f.name);
+      if (f.lastModified) fd.append('mtime_ms', String(f.lastModified));
       try {
         const r = await fetch('/api/sync/upload', {
           method: 'POST',
