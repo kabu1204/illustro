@@ -137,6 +137,11 @@ button (shown after a first pick) resumes with a stored folder handle — one ta
 **Android share target**: in Chrome, menu → *Install app*. Afterwards *Share → illustro* from the
 gallery or any app uploads the images directly (works for multiple selected images).
 
+**Native Android app** — for large folders (thousands of images), the browser is the wrong tool
+(Android routes all web file access through SAF, which is slow and opaque at that scale).
+Use the bundled native uploader instead: see [android/README.md](android/README.md). It uploads
+in the background with live per-file progress and resumes where it left off.
+
 **Optional auth** — if the server is reachable over VPN, set a token in `config.yaml`:
 
 ```yaml
