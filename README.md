@@ -125,14 +125,16 @@ docker compose -f docker/docker-compose.yml up -d
 Push images from an Android phone into your library over LAN/VPN — no app needed.
 
 1. Open `http://<server>:<port>` in the phone's browser → **Upload** tab.
-2. **Pick folder** for a bulk backfill (GBs are fine) or **Pick images** for a few files, then **Upload**.
-3. Files stream to the server inbox (verified by content hash; anything the server already has is skipped), and the background worker tags them automatically.
+2. **Pick folder** for a bulk backfill (GBs are fine; files *directly* in that folder — subfolders are skipped) or **Pick images** for a few files, then **Upload**.
+3. Files stream to the server inbox (verified by content hash; anything the server already has is skipped). Processing is **not** auto-triggered: start it from the worker controls in the web header ("Process now"), or let the serve-all interval pick the inbox up on its next round.
 
 Interruptions are cheap: the page holds a screen wake lock while the queue runs, but if the
 browser dies anyway, re-pick the same folder — files already uploaded are recognized
 (name+size+mtime, no hashing) and skipped instantly; the queue continues where it stopped.
 Worst-case repeated work is the single file that was in flight. The **Continue last folder**
 button (shown after a first pick) resumes with a stored folder handle — one tap, no re-navigation.
+Uploads preserve the source file's mtime; anything uploaded before this existed keeps its
+upload time.
 
 **Android share target**: in Chrome, menu → *Install app*. Afterwards *Share → illustro* from the
 gallery or any app uploads the images directly (works for multiple selected images).

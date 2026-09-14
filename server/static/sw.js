@@ -55,7 +55,6 @@ async function handleShare(request) {
         failed++;
       }
     }
-    if (stored > 0) fetch('/api/worker/run', { method: 'POST' }).catch(() => {});
   } catch (e) {
     failed++;
   }

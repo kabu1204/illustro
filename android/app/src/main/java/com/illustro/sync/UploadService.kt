@@ -19,7 +19,6 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -161,18 +160,6 @@ class UploadService : Service() {
         } catch (e: Exception) {
             SyncState.lastError = e.message ?: e.toString()
         } finally {
-            // Kick the server worker so tagging starts immediately instead of waiting
-            // for its next scheduled round (serve-only mode returns 400; ignore).
-            if (uploaded.get() > 0) {
-                Thread {
-                    try {
-                        val rb = Request.Builder().url("$base/api/worker/run").post(ByteArray(0).toRequestBody(null))
-                        if (token.isNotEmpty()) rb.header("X-API-Token", token)
-                        CLIENT.newCall(rb.build()).execute().close()
-                    } catch (_: Exception) {
-                    }
-                }.start()
-            }
             SyncState.running = false
             SyncState.finished = true
             SyncState.phase = "done"
@@ -192,7 +179,7 @@ class UploadService : Service() {
             walkFile(direct, out)
             if (out.isNotEmpty()) return out
         }
-        walkSaf(treeUri, DocumentsContract.getTreeDocumentId(treeUri), out, 0)
+        walkSaf(treeUri, DocumentsContract.getTreeDocumentId(treeUri), out)
         return out
     }
 
@@ -209,8 +196,8 @@ class UploadService : Service() {
     private fun walkFile(dir: File, out: MutableList<Source>) {
         val children = dir.listFiles() ?: return
         for (f in children) {
-            if (f.isDirectory) walkFile(f, out)
-            else if (f.isFile && isImage(f.name)) {
+            // Non-recursive: only files directly inside the picked folder.
+            if (f.isFile && isImage(f.name)) {
                 out.add(Source(f.name, f.length(), f.lastModified(), f, null))
                 SyncState.total = out.size
                 SyncState.current = f.name
@@ -218,8 +205,7 @@ class UploadService : Service() {
         }
     }
 
-    private fun walkSaf(treeUri: Uri, parentDocId: String, out: MutableList<Source>, depth: Int) {
-        if (depth > 15) return
+    private fun walkSaf(treeUri: Uri, parentDocId: String, out: MutableList<Source>) {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         val proj = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -240,9 +226,8 @@ class UploadService : Service() {
                     val docId = c.getString(iId)
                     val name = c.getString(iName) ?: continue
                     val mime = c.getString(iMime) ?: ""
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        walkSaf(treeUri, docId, out, depth + 1)
-                    } else if (isImage(name)) {
+                    // Non-recursive: subfolders are skipped.
+                    if (mime != DocumentsContract.Document.MIME_TYPE_DIR && isImage(name)) {
                         out.add(
                             Source(
                                 name, c.getLong(iSize), c.getLong(iMtime), null,

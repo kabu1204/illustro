@@ -31,7 +31,8 @@ function fakeFile(name, size, mtime, byte) {
   return new File([new Uint8Array(size).fill(byte)], name, { lastModified: mtime, type: 'image/png' });
 }
 
-// One fake directory with 50 files (a couple with bad extensions), plus one subfolder
+// One fake directory with 50 files (a couple with bad extensions), plus a subfolder
+// whose file must NOT be queued (non-recursive selection)
 const MTIME = 1700000000000;
 function fakeDir() {
   const files = [];
@@ -43,8 +44,7 @@ function fakeDir() {
     name: 'fakepics', kind: 'directory',
     values() {
       const all = [...files.map(f => ({ kind: 'file', name: f.name, getFile: async () => f })),
-                   ...sub.map(f => ({ kind: 'file', name: f.name, getFile: async () => f })),
-                   { kind: 'directory', name: 'sub', values() { return [{ done: true, value: { kind: 'file', name: 'sub/a.jpg', getFile: async () => sub[0] } }][Symbol.iterator](); } }];
+                    { kind: 'directory', name: 'sub', values() { return [{ done: true, value: { kind: 'file', name: 'sub/a.jpg', getFile: async () => sub[0] } }][Symbol.iterator](); } }];
       return all[Symbol.iterator]();
     },
   };
@@ -85,16 +85,16 @@ eval(js + '\nglobal.__UP = UP; global.__addFiles = addFiles; global.__enqueueFro
   // 1) Folder-picker path (handles, lazy)
   await global.__enqueueFromDir(fakeDir());
   const imgs = UP.queue.filter(i => true).length;
-  console.assert(imgs === 52, `expected 52 queued (50 png + cover.webp + sub/a.jpg, note.txt filtered), got ${imgs}`);
-  console.log('1. enqueueFromDir (recursive, ext filter, lazy handles):', imgs, 'queued');
+  console.assert(imgs === 51, `expected 51 queued (50 png + cover.webp; note.txt filtered, sub/a.jpg skipped as non-recursive), got ${imgs}`);
+  console.log('1. enqueueFromDir (top-level only, ext filter, lazy handles):', imgs, 'queued');
 
   // 2) Re-pick the same folder: no duplicates within session (seenMk gets filled at getFile time in phase 1,
   //    and enqueueFromDir itself has no dup guard across picks by design — verify phase-1 skip instead)
   await global.__startUpload();
   console.log('2. upload run: stored =', UP.sessionStored, '| statuses:',
     JSON.stringify(UP.queue.reduce((a, i) => (a[i.status] = (a[i.status] || 0) + 1, a), {})));
-  console.assert(UP.sessionStored === 52, 'all 52 should upload');
-  console.assert(uploaded.length === 52, 'exactly 52 uploads hit the network, got ' + uploaded.length);
+  console.assert(UP.sessionStored === 51, 'all 51 should upload');
+  console.assert(uploaded.length === 51, 'exactly 51 uploads hit the network, got ' + uploaded.length);
 
   // 3) Simulate a page reload: fresh state + persisted meta/ledger from localStorage
   eval('UP.ledger.clear(); UP.meta = {}; UP.queue.length = 0; UP.sessionStored = 0; UP.seenMk.clear(); uploaded.length = 0;');
@@ -106,7 +106,7 @@ eval(js + '\nglobal.__UP = UP; global.__addFiles = addFiles; global.__enqueueFro
   await global.__startUpload();
   const dupCount = UP.queue.filter(i => i.status === 'dup' || i.status === 'skip').length;
   console.log('3. after simulated reload + re-pick: dup/skip =', dupCount, '| network uploads =', uploaded.length);
-  console.assert(dupCount === 52 && uploaded.length === 0, 're-pick after reload must upload nothing');
+  console.assert(dupCount === 51 && uploaded.length === 0, 're-pick after reload must upload nothing');
 
   console.log('\nHARNESS PASSED');
   process.exit(0);

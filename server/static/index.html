@@ -200,8 +200,9 @@
       <button onclick="clearDone()">Clear finished</button>
     </div>
     <div style="color:var(--muted);font-size:12px;margin-top:8px">
-      Keep this page open while uploading. Interrupted? Just re-pick the same folder — everything already
-      uploaded is skipped instantly, nothing is sent twice. Tagging starts automatically after the batch.
+      Only files directly inside the picked folder are uploaded (subfolders are skipped). Keep this page open while
+      uploading — interrupted? Re-pick the same folder: everything already uploaded is skipped instantly. Start
+      tagging from the header's worker controls when you're ready.
     </div>
     <div id="upList"></div>
   </div>
@@ -667,9 +668,8 @@ async function enqueueFromDir(dir) {
   const items = [];
   let scanned = 0;
   upScanNote('Scanning folder…');
-  // Non-recursive entries() would miss subfolders (DCIM/Camera etc.) — walk depth-first.
-  const walk = async (d, depth) => {
-    if (depth > 12) return;
+  // Non-recursive: only files directly inside the picked folder (subfolders are skipped).
+  const walk = async (d) => {
     let iter;
     try { iter = d.values(); } catch (e) { return; }
     for (;;) {
@@ -685,8 +685,6 @@ async function enqueueFromDir(dir) {
           items.push({ f: null, handle: h, name: h.name, size: null, mk: null,
             hash: null, status: 'pending', tries: 0, prog: 0, err: '' });
         }
-      } else if (h.kind === 'directory') {
-        await walk(h, depth + 1);
       }
       if (scanned % 200 === 0) {
         upScanNote(`Scanning folder… ${scanned} entries, ${items.length} images`);
@@ -694,7 +692,7 @@ async function enqueueFromDir(dir) {
       }
     }
   };
-  await walk(dir, 0);
+  await walk(dir);
   for (const it of items) UP.queue.push(it);
   if (scanned) upNote(`Folder scanned: ${items.length} image(s) queued from ${scanned} entries.`);
   renderUp();
@@ -706,6 +704,8 @@ async function addFiles(files) {
   const total = files.length;
   for (let idx = 0; idx < total; idx++) {
     const f = files[idx];
+    const rel = f.webkitRelativePath || '';
+    if (rel && rel.split('/').length > 2) continue;   // folder-pick fallback: skip subfolders
     const dot = f.name.lastIndexOf('.');
     if (dot < 0 || !exts.has(f.name.slice(dot).toLowerCase())) continue;
     const mk = upMetaKey(f);
@@ -901,8 +901,7 @@ async function startUpload() {
     releaseWake();
     upPersist();
     if (UP.sessionStored > 0) {
-      upNote(`Done — ${UP.sessionStored} file(s) stored. Tagging has been triggered; watch the worker status in the header.`);
-      fetch('/api/worker/run', { method: 'POST' }).catch(() => {});
+      upNote(`Done — ${UP.sessionStored} file(s) stored. Start processing from the worker controls in the header when you're ready.`);
     }
     renderUp();
   }

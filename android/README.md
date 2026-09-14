@@ -27,6 +27,9 @@ from the latest run on the Actions page, transfer it to the phone, and install
 3. **Start upload**. The service runs as a foreground service with a partial
    wake lock, so it keeps going with the screen off. Progress: current file,
    processed/total, new vs already-known counts, bytes and speed.
+   Only files directly inside the picked folder are uploaded — subfolders are
+   skipped. Processing on the server is not auto-triggered; start it from the
+   web UI's worker controls ("Process now") when you want tagging to run.
 
 Interrupted (killed app, lost Wi-Fi, tapped Stop)? Tap Start again — files
 already uploaded are recognized via a local ledger (name+size+mtime -> hash)
