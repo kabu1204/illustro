@@ -1,18 +1,22 @@
-"""FastAPI local server: search / similar / thumbnails / stats / monitor.
+"""FastAPI local server: search / similar / thumbnails / stats / monitor / mobile sync.
 
 Start: python -m illustro.cli serve   then open http://127.0.0.1:8000
 """
 from __future__ import annotations
 
+import hashlib
 import io
+import re
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from pydantic import BaseModel
 
 from illustro.analyze import duplicate_clusters, overview
 from illustro.config import Config
@@ -24,6 +28,11 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # Maximum number of per-query latency samples kept in memory
 MAX_QUERY_SAMPLES = 100
+
+
+class SyncCheckBody(BaseModel):
+    """POST /api/sync/check request: batch of sha256 hex digests."""
+    hashes: list[str] = []
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -188,6 +197,88 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
         if not row:
             return Response(status_code=404)
         return FileResponse(row["path"])
+
+
+    # ---- Mobile sync: one-way upload (phone -> server) ----
+    # Files land in the inbox dir (auto-watched by the scanner); the worker tags
+    # them on its next round. The UI pokes /api/worker/run to make it immediate.
+    _UNSAFE_FILENAME = re.compile(r'[/\\:*?"<>|\x00-\x1f]')  # keep unicode names, strip path/Windows-unsafe chars
+
+    def _check_sync_token(x_api_token: str | None = Header(default=None)) -> None:
+        if cfg.sync.token and x_api_token != cfg.sync.token:
+            raise HTTPException(status_code=401, detail="Invalid or missing X-API-Token")
+
+    @app.get("/api/sync/info")
+    def api_sync_info():
+        # No token required: lets the UI discover whether sync is on / needs a token.
+        return JSONResponse({
+            "enabled": cfg.sync.enabled,
+            "auth_required": bool(cfg.sync.token),
+            "max_upload_mb": cfg.sync.max_upload_mb,
+            "extensions": cfg.extensions,
+        })
+
+    @app.post("/api/sync/check")
+    def api_sync_check(body: SyncCheckBody, _: None = Depends(_check_sync_token)):
+        """Which of these sha256 digests does the server already have? (batch dedup check)"""
+        if not cfg.sync.enabled:
+            raise HTTPException(status_code=403, detail="Sync disabled")
+        hashes = [h for h in body.hashes if isinstance(h, str) and len(h) == 64][:5000]
+        known = db.known_hashes(hashes) if hashes else set()
+        return JSONResponse({"known": sorted(known)})
+
+    @app.post("/api/sync/upload")
+    async def api_sync_upload(
+        file: UploadFile = File(...),
+        sha256: str = Form(default=""),
+        _: None = Depends(_check_sync_token),
+    ):
+        """One file per request. Streamed to disk (never buffered in RAM), hash-verified,
+        atomically renamed into the inbox. Exact duplicates are dropped (status=duplicate)."""
+        if not cfg.sync.enabled:
+            raise HTTPException(status_code=403, detail="Sync disabled")
+        orig = Path(file.filename or "upload")
+        ext = orig.suffix.lower()
+        if ext not in cfg.extensions:
+            raise HTTPException(status_code=415, detail=f"Unsupported extension: {ext or '(none)'}")
+        limit_mb = cfg.sync.max_upload_mb
+        limit = limit_mb * 1024 * 1024
+
+        inbox = cfg.inbox_path
+        tmp = inbox / f".{uuid.uuid4().hex}.part"
+        h = hashlib.sha256()
+        size = 0
+        try:
+            with open(tmp, "wb") as out:
+                while True:
+                    chunk = await file.read(1 << 20)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > limit:
+                        raise HTTPException(status_code=413, detail=f"File larger than max_upload_mb={limit_mb}")
+                    h.update(chunk)
+                    out.write(chunk)
+            digest = h.hexdigest()
+            if sha256 and sha256.lower() != digest:
+                raise HTTPException(status_code=422, detail="sha256 mismatch: upload corrupted in transit")
+            if digest in db.known_hashes([digest]):
+                tmp.unlink(missing_ok=True)
+                return JSONResponse({"status": "duplicate", "sha256": digest})
+            # Collision-safe, FS-safe name: <epoch>_<8hex>_<original name>
+            stem = _UNSAFE_FILENAME.sub("_", orig.stem).strip(". ")[:60] or "upload"
+            dest = inbox / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{stem}{ext}"
+            tmp.replace(dest)
+            # Record after the rename lands: a crash here at worst allows a benign
+            # duplicate on retry; recording first could reject content we never stored.
+            db.record_sync_hash(digest)
+            return JSONResponse({"status": "stored", "sha256": digest, "size": size, "name": dest.name})
+        except HTTPException:
+            tmp.unlink(missing_ok=True)
+            raise
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise HTTPException(status_code=500, detail="Upload failed")
 
     @app.get("/api/thumb/{image_id}")
     def api_thumb(image_id: int):

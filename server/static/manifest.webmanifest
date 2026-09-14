@@ -1,0 +1,24 @@
+{
+  "name": "illustro",
+  "short_name": "illustro",
+  "description": "Anime illustration library: tag search, similarity, analytics",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#14151a",
+  "theme_color": "#14151a",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{ "name": "files", "accept": ["image/*"] }]
+    }
+  }
+}

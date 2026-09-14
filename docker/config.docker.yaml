@@ -42,3 +42,12 @@ server:
   port: 8000
   thumbnail_size: 360
   page_size: 60
+
+# ---- Mobile sync (one-way upload: phone -> server) ----
+# Uploads land in /data/inbox (persistent volume) and are tagged automatically.
+# Defaults shown; delete this block to keep defaults.
+sync:
+  enabled: true
+  token: ""                # Set a token if the container is reachable beyond your LAN
+  inbox_dir: ""            # Empty = /data/inbox
+  max_upload_mb: 100

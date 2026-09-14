@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>illustro - Illustration Search</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#14151a" />
 <style>
   :root {
     --bg: #14151a; --panel: #1d1f27; --panel2: #262934;
@@ -97,6 +99,31 @@
   .bench-box b { color: var(--accent); }
   .err-box { background: #3a1a1a; border: 1px solid #6a2a2a; border-radius: 8px; padding: 8px 12px;
     font-size: 12px; color: #ffb0b0; margin-top: 10px; }
+  /* upload / mobile sync */
+  #upload { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 50; display: none;
+    overflow-y: auto; padding: 30px 14px; }
+  #upload.open { display: block; }
+  .ucard { max-width: 860px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 22px; }
+  .ukpis { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 14px; }
+  .ukpis b { color: var(--fg); }
+  .upbar { height: 10px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin: 10px 0; }
+  .upbar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; }
+  #upToken { background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+    padding: 9px 10px; border-radius: 10px; font-size: 13px; min-width: 150px; }
+  #upList { max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--line);
+    border-radius: 8px; }
+  .ufile { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; font-size: 12px;
+    padding: 5px 8px; border-bottom: 1px solid var(--line); align-items: center; }
+  .ufile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+  .ufile .st { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--panel2);
+    color: var(--muted); white-space: nowrap; }
+  .st.done { background: #1d3a29; color: #7ee2a8; }
+  .st.dup, .st.skip { background: #2a2a3d; color: #aab4ff; }
+  .st.err { background: #3a1a1a; color: #ffb0b0; }
+  .st.up, .st.hashing, .st.ready { background: #2a2140; color: #c3b0ff; }
+  .upnote { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -107,6 +134,7 @@
     <button class="primary" onclick="doSearch()">Search</button>
     <button onclick="openStats()">Stats</button>
     <button onclick="toggleMonitor()">Monitor</button>
+    <button onclick="openUpload()">Upload</button>
     <span id="worker" class="worker"></span>
   </div>
   <div class="row chips" id="ratingChips">
@@ -148,6 +176,37 @@
   </div>
 </div>
 
+<div id="upload">
+  <span class="close" onclick="closeUpload()">✕</span>
+  <div class="ucard">
+    <h2 style="margin-top:0">Upload from device</h2>
+    <div id="upDisabled" class="err-box" style="display:none"></div>
+    <div id="upNote" class="upnote" style="display:none"></div>
+    <div class="row">
+      <button onclick="document.getElementById('upFolder').click()">📂 Pick folder</button>
+      <button onclick="document.getElementById('upFiles').click()">🖼 Pick images</button>
+      <span style="flex:1"></span>
+      <input id="upToken" type="password" placeholder="API token (if set)" oninput="saveToken(this.value)">
+    </div>
+    <input type="file" id="upFolder" webkitdirectory multiple hidden>
+    <input type="file" id="upFiles" accept="image/*" multiple hidden>
+    <div class="ukpis" id="upSummary">No files picked yet — pick a folder to start a bulk backfill.</div>
+    <div class="upbar"><div id="upBar"></div></div>
+    <div class="row">
+      <button class="primary" id="upStartBtn" onclick="startUpload()">Upload</button>
+      <button id="upPauseBtn" onclick="pauseUpload()" style="display:none">Pause</button>
+      <button id="upRetryBtn" onclick="retryFailed()" style="display:none">Retry failed</button>
+      <button onclick="clearDone()">Clear finished</button>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin-top:8px">
+      Keep this page open while uploading. Interrupted? Just re-pick the same folder — everything already
+      uploaded is skipped instantly, nothing is sent twice. Tagging starts automatically after the batch.
+    </div>
+    <div id="upList"></div>
+  </div>
+</div>
+
+<script src="/sha256.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 const state = { include: [], exclude: [], rating: [], page: 1, total: 0, q: "" };
@@ -459,8 +518,292 @@ function renderLatencyStats(stats) {
   el.innerHTML = mkTbl('Search', stats.search) + mkTbl('Similar', stats.similar);
 }
 
+// ---- Upload / mobile sync (one-way: this device -> server) ----
+// Design notes:
+// - One file per request; server streams to disk and re-verifies sha256.
+// - Dedup at three levels: (1) per-file metadata cache (name|size|mtime -> hash) for instant
+//   re-picks, (2) localStorage ledger of uploaded hashes, (3) batch /api/sync/check against
+//   the server before uploading. An interrupted run never re-uploads a finished file.
+// - crypto.subtle is only available on secure contexts (https / localhost); plain-HTTP LAN
+//   falls back to the pure-JS streaming Sha256 from sha256.js.
+const UP = {
+  queue: [], running: false, stopReq: false, sessionStored: 0,
+  info: null, wakeLock: null, ledger: new Set(), meta: {}, renderT: null,
+};
+const UP_STATUSES = ['pending', 'hashing', 'ready', 'uploading', 'done', 'dup', 'skip', 'error'];
+const UP_LABEL = { pending: 'queued', hashing: 'hashing', ready: 'new', uploading: 'uploading',
+  done: 'uploaded', dup: 'on server', skip: 'uploaded', error: 'failed' };
+
+function upLS(key, val) {
+  try {
+    if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null');
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (e) { return null; }
+}
+function upLoadPersisted() {
+  (upLS('illustro_up_hashes') || []).forEach(h => UP.ledger.add(h));
+  UP.meta = upLS('illustro_up_meta') || {};
+}
+function upPersist() {
+  let arr = [...UP.ledger];
+  if (arr.length > 30000) arr = arr.slice(-20000);
+  upLS('illustro_up_hashes', arr);
+  const keys = Object.keys(UP.meta);
+  if (keys.length > 30000) {
+    const keep = {}; keys.slice(-20000).forEach(k => keep[k] = UP.meta[k]);
+    UP.meta = keep;
+  }
+  upLS('illustro_up_meta', UP.meta);
+}
+function upMetaKey(f) { return f.name + '|' + f.size + '|' + f.lastModified; }
+
+// Tiny IndexedDB kv so the service worker (share target) can read the token.
+function upIdb() {
+  return new Promise(res => {
+    const o = indexedDB.open('illustro', 1);
+    o.onupgradeneeded = () => o.result.createObjectStore('kv');
+    o.onsuccess = () => res(o.result);
+    o.onerror = () => res(null);
+  });
+}
+async function idbSet(k, v) {
+  const db = await upIdb(); if (!db) return;
+  db.transaction('kv', 'readwrite').objectStore('kv').put(v, k);
+}
+function saveToken(v) {
+  localStorage.setItem('illustro_up_token', v);
+  idbSet('token', v);
+}
+function upHeaders(tok, json) {
+  const h = {}; if (tok) h['X-API-Token'] = tok;
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+
+async function openUpload() {
+  document.getElementById('upload').classList.add('open');
+  document.getElementById('upToken').value = localStorage.getItem('illustro_up_token') || '';
+  if (!UP.info) { try { UP.info = await (await fetch('/api/sync/info')).json(); } catch (e) { UP.info = null; } }
+  const dis = document.getElementById('upDisabled');
+  if (!UP.info || !UP.info.enabled) {
+    dis.style.display = 'block';
+    dis.textContent = 'Sync is disabled on the server. Set sync.enabled=true in config.yaml.';
+  } else dis.style.display = 'none';
+  renderUp();
+}
+function closeUpload() { document.getElementById('upload').classList.remove('open'); }
+function upNote(msg) { const el = document.getElementById('upNote'); el.textContent = msg; el.style.display = 'block'; }
+
+document.getElementById('upFolder').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+document.getElementById('upFiles').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+
+function addFiles(files) {
+  const exts = new Set((UP.info && UP.info.extensions) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']);
+  let ignored = 0, known = 0;
+  for (const f of files) {
+    const dot = f.name.lastIndexOf('.');
+    if (dot < 0 || !exts.has(f.name.slice(dot).toLowerCase())) { ignored++; continue; }
+    const rec = UP.meta[upMetaKey(f)];
+    if (rec && rec.done) { known++; continue; }              // same file seen before: skip without hashing
+    if (UP.queue.some(i => i.mk === upMetaKey(f) && UP_STATUSES.indexOf(i.status) < 4)) continue; // already queued
+    UP.queue.push({ f, name: f.name, size: f.size, mk: upMetaKey(f), hash: rec ? rec.h : null,
+      status: 'pending', tries: 0, prog: 0, err: '' });
+  }
+  if (known) upNote(`${known} file(s) already uploaded before — skipped instantly.`);
+  renderUp();
+}
+
+async function hashFile(f) {
+  if (window.isSecureContext && window.crypto && crypto.subtle) {
+    const d = await crypto.subtle.digest('SHA-256', await f.arrayBuffer());
+    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  const h = new Sha256();
+  const CH = 4 << 20;
+  for (let off = 0; off < f.size; off += CH) h.update(new Uint8Array(await f.slice(off, off + CH).arrayBuffer()));
+  return h.hex();
+}
+
+function scheduleRender() {
+  if (UP.renderT) return;
+  UP.renderT = setTimeout(() => { UP.renderT = null; renderUp(); }, 250);
+}
+
+function fmtMB(b) { return b >= (1 << 30) ? (b / (1 << 30)).toFixed(2) + ' GB' : (b / (1 << 20)).toFixed(1) + ' MB'; }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function renderUp() {
+  const n = {}; UP_STATUSES.forEach(s => n[s] = 0);
+  let bytesTotal = 0, bytesDone = 0, inflight = 0;
+  for (const it of UP.queue) {
+    n[it.status]++;
+    if (it.status === 'skip') continue;
+    bytesTotal += it.size;
+    if (it.status === 'done' || it.status === 'dup') bytesDone += it.size;
+    if (it.status === 'uploading') inflight += it.prog * it.size;
+  }
+  const active = n.pending + n.hashing + n.ready + n.uploading;
+  const el = document.getElementById('upSummary');
+  if (!UP.queue.length) { el.textContent = 'No files picked yet — pick a folder to start a bulk backfill.'; }
+  else el.innerHTML = `<span>Picked <b>${UP.queue.length}</b></span>` +
+    (n.done ? `<span>uploaded <b>${n.done}</b></span>` : '') +
+    (n.dup + n.skip ? `<span>already on server <b>${n.dup + n.skip}</b></span>` : '') +
+    (n.error ? `<span style="color:#ffb0b0">failed <b>${n.error}</b></span>` : '') +
+    (active ? `<span>to go <b>${active}</b></span>` : '') +
+    (bytesTotal ? `<span>${fmtMB(bytesDone + inflight)} / ${fmtMB(bytesTotal)}</span>` : '');
+  const pct = bytesTotal ? Math.min(100, Math.round(100 * (bytesDone + inflight) / bytesTotal)) : 0;
+  document.getElementById('upBar').style.width = pct + '%';
+
+  const list = document.getElementById('upList');
+  const rows = UP.queue.filter(i => i.status !== 'skip').slice(-60);
+  list.innerHTML = rows.map(i => {
+    const st = i.status === 'uploading' ? `uploading ${Math.round(i.prog * 100)}%`
+      : (i.status === 'error' && i.err) ? `${UP_LABEL[i.status]}: ${i.err}` : UP_LABEL[i.status];
+    return `<div class="ufile"><span class="nm" title="${esc(i.name)}">${esc(i.name)}</span>` +
+      `<span>${fmtMB(i.size)}</span><span class="st ${i.status === 'done' ? 'done' : i.status}">${esc(st)}</span></div>`;
+  }).join('');
+  if (UP.running) list.scrollTop = list.scrollHeight;
+
+  document.getElementById('upStartBtn').style.display = UP.running ? 'none' : '';
+  document.getElementById('upStartBtn').disabled = !UP.queue.some(i => i.status === 'pending' || i.status === 'ready' || i.status === 'error');
+  document.getElementById('upPauseBtn').style.display = UP.running ? '' : 'none';
+  document.getElementById('upRetryBtn').style.display = (!UP.running && n.error) ? '' : 'none';
+}
+
+function finishItem(it, status) {
+  it.status = status;
+  if (status === 'done' || status === 'dup') {
+    UP.ledger.add(it.hash);
+    UP.meta[it.mk] = { h: it.hash, done: 1 };
+    if (status === 'done') UP.sessionStored++;
+  }
+  scheduleRender();
+}
+
+function xhrUpload(it, tok) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append('file', it.f, it.name);
+    if (it.hash) fd.append('sha256', it.hash);
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/sync/upload');
+    if (tok) x.setRequestHeader('X-API-Token', tok);
+    x.timeout = 300000;
+    x.upload.onprogress = e => { if (e.lengthComputable) { it.prog = e.loaded / e.total; scheduleRender(); } };
+    x.onload = () => resolve(x);
+    x.onerror = () => reject(new Error('network error'));
+    x.ontimeout = () => reject(new Error('timeout'));
+    x.send(fd);
+  });
+}
+
+async function uploadItem(it, tok) {
+  it.status = 'uploading'; it.prog = 0; scheduleRender();
+  for (;;) {
+    try {
+      const x = await xhrUpload(it, tok);
+      if (x.status === 401) { it.status = 'error'; it.err = 'unauthorized (check token)'; UP.stopReq = true; renderUp(); return; }
+      if (x.status === 413) { it.status = 'error'; it.err = 'too large for server limit'; renderUp(); return; }
+      if (x.status === 415) { it.status = 'error'; it.err = 'unsupported type'; renderUp(); return; }
+      if (x.status === 422) { it.status = 'error'; it.err = 'hash mismatch (retry from scratch)'; renderUp(); return; }
+      if (x.status >= 500) throw new Error('server error ' + x.status);
+      if (x.status !== 200) throw new Error('HTTP ' + x.status);
+      const j = JSON.parse(x.responseText);
+      finishItem(it, j.status === 'stored' ? 'done' : 'dup');
+      return;
+    } catch (e) {
+      it.tries++;
+      if (it.tries >= 3) { it.status = 'error'; it.err = e.message || String(e); renderUp(); return; }
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, it.tries)));
+    }
+  }
+}
+
+async function acquireWake() {
+  try { if ('wakeLock' in navigator) UP.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+function releaseWake() { if (UP.wakeLock) { UP.wakeLock.release().catch(() => {}); UP.wakeLock = null; } }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && UP.running) acquireWake();
+});
+
+async function startUpload() {
+  if (UP.running) return;
+  if (!UP.queue.some(i => i.status === 'pending' || i.status === 'ready')) { renderUp(); return; }
+  UP.running = true; UP.stopReq = false;
+  renderUp();
+  await acquireWake();
+  const tok = localStorage.getItem('illustro_up_token') || '';
+  try {
+    // Phase 1: hash everything pending (sequential: CPU/IO bound)
+    for (const it of UP.queue) {
+      if (UP.stopReq) break;
+      if (it.status !== 'pending') continue;
+      if (!it.hash) {
+        it.status = 'hashing'; scheduleRender();
+        try { it.hash = await hashFile(it.f); }
+        catch (e) { it.status = 'error'; it.err = 'hash failed'; continue; }
+      }
+      if (UP.ledger.has(it.hash)) { it.status = 'skip'; finishItem(it, 'dup'); continue; }
+      it.status = 'ready'; scheduleRender();
+    }
+    // Phase 2: batch server check -> mark everything the server already has
+    const ready = UP.queue.filter(i => i.status === 'ready' && i.hash);
+    for (let i = 0; i < ready.length && !UP.stopReq; i += 500) {
+      const batch = ready.slice(i, i + 500);
+      try {
+        const r = await fetch('/api/sync/check', {
+          method: 'POST', headers: upHeaders(tok, true),
+          body: JSON.stringify({ hashes: batch.map(b => b.hash) }),
+        });
+        if (r.status === 401) { batch.forEach(b => { b.status = 'error'; b.err = 'unauthorized (check token)'; }); UP.stopReq = true; break; }
+        if (r.ok) {
+          const known = new Set((await r.json()).known || []);
+          batch.forEach(b => { if (known.has(b.hash)) finishItem(b, 'dup'); });
+        }
+      } catch (e) { /* transient: the upload phase will surface real errors */ }
+    }
+    // Phase 3: upload with N parallel workers
+    const list = UP.queue.filter(i => i.status === 'ready');
+    let idx = 0;
+    const next = () => (!UP.stopReq && idx < list.length) ? list[idx++] : null;
+    await Promise.all([0, 1, 2].map(async () => {
+      for (let it; (it = next());) await uploadItem(it, tok);
+    }));
+  } finally {
+    UP.running = false;
+    releaseWake();
+    upPersist();
+    if (UP.sessionStored > 0) {
+      upNote(`Done — ${UP.sessionStored} file(s) stored. Tagging has been triggered; watch the worker status in the header.`);
+      fetch('/api/worker/run', { method: 'POST' }).catch(() => {});
+    }
+    renderUp();
+  }
+}
+
+function pauseUpload() { UP.stopReq = true; }
+function retryFailed() {
+  for (const it of UP.queue) if (it.status === 'error') { it.status = it.hash ? 'ready' : 'pending'; it.tries = 0; it.prog = 0; it.err = ''; }
+  if (!UP.running) startUpload();
+}
+function clearDone() {
+  UP.queue = UP.queue.filter(i => ['done', 'dup', 'skip', 'error'].indexOf(i.status) < 0);
+  renderUp();
+}
+upLoadPersisted();
+
 // Initial view: browse mode
 doSearch();
+
+// PWA share target: the service worker uploads shared files, then redirects here.
+const _sp = new URLSearchParams(location.search);
+if (_sp.has('shared')) {
+  openUpload();
+  upNote(`Shared: ${_sp.get('shared')} stored · ${_sp.get('dup') || 0} already on server · ${_sp.get('failed') || 0} failed`);
+  history.replaceState(null, '', '/');
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_images_tagged   ON images(tagged);
 CREATE INDEX IF NOT EXISTS idx_images_embedded ON images(embedded);
 CREATE INDEX IF NOT EXISTS idx_images_dhash    ON images(dhash);
 CREATE INDEX IF NOT EXISTS idx_images_rating   ON images(rating);
+CREATE INDEX IF NOT EXISTS idx_images_sha256   ON images(sha256);
 
 CREATE TABLE IF NOT EXISTS tags (
     id       INTEGER PRIMARY KEY,
@@ -54,6 +55,14 @@ CREATE TABLE IF NOT EXISTS image_tags (
 CREATE INDEX IF NOT EXISTS idx_it_tag ON image_tags(tag_id);
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+
+-- Hashes accepted by the sync upload endpoint. Dedup must work before the
+-- scanner imports the file into images (uploads in one batch would otherwise
+-- double-store on retry). Rows are tiny; the table may exceed images over time.
+CREATE TABLE IF NOT EXISTS sync_hashes (
+    sha256   TEXT PRIMARY KEY,
+    added_at REAL
+);
 """
 
 
@@ -87,6 +96,32 @@ class DB:
     def known_paths(self) -> dict[str, float]:
         """Returns {path: mtime} for all imported images, used to skip unchanged files during incremental scan."""
         return {r["path"]: r["mtime"] for r in self.conn.execute("SELECT path, mtime FROM images")}
+
+    def known_hashes(self, hashes: list[str]) -> set[str]:
+        """Return the subset of the given sha256 hex digests already stored,
+        either as imported images or as accepted-but-not-yet-scanned uploads."""
+        known: set[str] = set()
+        with self._lock:
+            for i in range(0, len(hashes), 500):
+                chunk = [h for h in hashes[i : i + 500] if h]
+                if not chunk:
+                    continue
+                ph = ",".join("?" * len(chunk))
+                known.update(
+                    r["sha256"] for r in self.conn.execute(f"SELECT sha256 FROM images WHERE sha256 IN ({ph})", chunk)
+                )
+                known.update(
+                    r["sha256"] for r in self.conn.execute(f"SELECT sha256 FROM sync_hashes WHERE sha256 IN ({ph})", chunk)
+                )
+        return known
+
+    def record_sync_hash(self, sha256: str):
+        """Mark an upload as accepted (called after the file is safely renamed into the inbox)."""
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO sync_hashes (sha256, added_at) VALUES (?,?)", (sha256, time.time())
+            )
+            self.conn.commit()
 
     def images_needing_tags(self) -> list[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM images WHERE tagged=0").fetchall()

@@ -40,6 +40,19 @@ class ServerCfg:
 
 
 @dataclass
+class SyncCfg:
+    """Mobile -> server one-way upload sync (see /api/sync/*)."""
+    enabled: bool = True
+    # If set, /api/sync/* endpoints require this token in the X-API-Token header.
+    # Empty = no auth (fine on a trusted LAN; set one when reachable over VPN).
+    token: str = ""
+    # Where uploaded files land before the scanner picks them up.
+    # Empty = <data_dir>/inbox. Always appended to image_dirs automatically.
+    inbox_dir: str = ""
+    max_upload_mb: int = 100
+
+
+@dataclass
 class Config:
     image_dirs: list[str] = field(default_factory=list)
     extensions: list[str] = field(
@@ -55,6 +68,7 @@ class Config:
     tagger: TaggerCfg = field(default_factory=TaggerCfg)
     index: IndexCfg = field(default_factory=IndexCfg)
     server: ServerCfg = field(default_factory=ServerCfg)
+    sync: SyncCfg = field(default_factory=SyncCfg)
 
     # ---- Derived paths ----
     @property
@@ -84,6 +98,19 @@ class Config:
     @property
     def thumb_dir(self) -> Path:
         p = self.data_path / "thumbs"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def inbox_path(self) -> Path:
+        """Upload landing zone. Created eagerly; auto-watched by the scanner."""
+        raw = self.sync.inbox_dir.strip()
+        if not raw:
+            p = self.data_path / "inbox"
+        elif os.path.isabs(raw):
+            p = Path(raw)
+        else:
+            p = (ROOT / raw).resolve()
         p.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -121,6 +148,7 @@ def load(path: str | os.PathLike | None = None) -> Config:
         cfg.tagger = _merge(TaggerCfg(), raw.get("tagger", {}))
         cfg.index = _merge(IndexCfg(), raw.get("index", {}))
         cfg.server = _merge(ServerCfg(), raw.get("server", {}))
+        cfg.sync = _merge(SyncCfg(), raw.get("sync", {}))
         for k in ("image_dirs", "extensions", "data_dir", "device", "tags_zh_extra"):
             if k in raw:
                 setattr(cfg, k, raw[k])
@@ -129,4 +157,10 @@ def load(path: str | os.PathLike | None = None) -> Config:
             f"Config file not found: {p}. Copy config.example.yaml to config.yaml and set your image directories."
         )
     cfg.extensions = [e.lower() if e.startswith(".") else "." + e.lower() for e in cfg.extensions]
+    # Uploaded files land in the inbox; make sure the scanner watches it so the
+    # background worker picks them up without the user editing image_dirs.
+    if cfg.sync.enabled:
+        inbox = str(cfg.inbox_path)
+        if inbox not in cfg.image_dirs:
+            cfg.image_dirs.append(inbox)
     return cfg

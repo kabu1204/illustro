@@ -10,6 +10,7 @@ Fully offline, anime-native. Runs on RTX 4060 (CUDA), Intel N100 iGPU (OpenVINO)
 - **Collection analytics**: Top tags / character rankings, rating distribution, dominant colors, orientation, near-duplicate detection.
 - **Incremental**: Drop new images into your directory, re-run and only new files are processed.
 - **Background worker**: In single-container mode, a background thread continuously scans and tags new images. Pause/resume/trigger from the UI.
+- **Mobile sync**: One-way upload from an Android phone: bulk folder backfill or system share sheet (installable PWA). Content-hash dedup, resumable, nothing sent twice.
 - **Docker deployment**: Single-container image for TrueNAS SCALE / N100 with Intel iGPU acceleration via OpenVINO. See [docker/README.md](docker/README.md).
 
 ## Tech stack (anime-native)
@@ -23,6 +24,7 @@ Fully offline, anime-native. Runs on RTX 4060 (CUDA), Intel N100 iGPU (OpenVINO)
 | UI | FastAPI + single-file frontend | Local web page, masonry gallery |
 | Deployment | Docker (single container) | TrueNAS SCALE / N100 / OpenVINO iGPU |
 | Background processing | Worker thread | Incremental auto-scan, pause/resume/trigger |
+| Mobile upload | FastAPI streaming upload + PWA share target | One file per request, sha256 dedup, auto-tagged via inbox |
 
 > No generic CLIP (jina/SigLIP/Chinese-CLIP): those are natural photo domain, out-of-domain for anime.
 > Exact attributes go through tags (native imageboard annotations, most accurate), similarity goes through tagger vectors. Simple and more on-target.
@@ -51,7 +53,11 @@ illustration/
 │  └─ data/tags_zh.json      # Bilingual tag starter table (extensible)
 ├─ server/
 │  ├─ app.py                 # FastAPI endpoints
-│  └─ static/index.html      # Frontend gallery
+│  ├─ static/index.html      # Frontend gallery + upload page
+│  ├─ static/sha256.js       # Streaming SHA-256 (plain-HTTP fallback for client-side hashing)
+│  ├─ static/sw.js           # Service worker: Android share target -> /api/sync/upload
+│  ├─ static/manifest.webmanifest  # PWA manifest (installable, share target)
+│  └─ static/icons/          # PWA icons
 └─ docker/
    ├─ Dockerfile             # Container image (N100 / OpenVINO)
    ├─ docker-compose.yml     # Compose for TrueNAS SCALE
@@ -113,6 +119,35 @@ For TrueNAS SCALE / N100 / OpenVINO deployment, see [docker/README.md](docker/RE
 docker build -t illustro:latest -f docker/Dockerfile .
 docker compose -f docker/docker-compose.yml up -d
 ```
+
+### Mobile sync (one-way upload: phone -> server)
+
+Push images from an Android phone into your library over LAN/VPN — no app needed.
+
+1. Open `http://<server>:<port>` in the phone's browser → **Upload** tab.
+2. **Pick folder** for a bulk backfill (GBs are fine) or **Pick images** for a few files, then **Upload**.
+3. Files stream to the server inbox (verified by content hash; anything the server already has is skipped), and the background worker tags them automatically.
+
+Interruptions are cheap: the page holds a screen wake lock while the queue runs, but if the
+browser dies anyway, just re-pick the same folder — files already uploaded are recognized
+(name+size+mtime, no hashing) and skipped instantly; the queue continues where it stopped.
+Worst-case repeated work is the single file that was in flight.
+
+**Android share target**: in Chrome, menu → *Install app*. Afterwards *Share → illustro* from the
+gallery or any app uploads the images directly (works for multiple selected images).
+
+**Optional auth** — if the server is reachable over VPN, set a token in `config.yaml`:
+
+```yaml
+sync:
+  token: "a-long-random-string"   # enter once in the Upload tab; stored on the phone
+  # inbox_dir: ""                 # default: <data_dir>/inbox (auto-watched by the scanner)
+  # max_upload_mb: 100
+```
+
+API: `POST /api/sync/check` (which of these sha256 hashes do you lack?) and
+`POST /api/sync/upload` (one file per request, streamed to disk, server-side hash verify,
+exact duplicates answered with `status=duplicate` and dropped).
 
 ## How Chinese search works
 

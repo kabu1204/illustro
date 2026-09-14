@@ -47,3 +47,14 @@ server:
   port: 8000
   thumbnail_size: 360      # Thumbnail edge length (px)
   page_size: 60            # Images per page
+
+# ---- Mobile sync (one-way upload: phone -> server) ----
+# Upload from the web UI's Upload tab (or the Android share target once the
+# PWA is installed). Files land in the inbox dir, which is scanned
+# automatically; the background worker tags them shortly after.
+sync:
+  enabled: true
+  token: ""                # Optional. If set, uploads must send it as X-API-Token.
+                           # Leave empty on a trusted LAN; set one for VPN access.
+  inbox_dir: ""            # Empty = <data_dir>/inbox. Auto-watched by the scanner.
+  max_upload_mb: 100       # Reject uploads of a single file larger than this
