@@ -19,6 +19,7 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -160,6 +161,18 @@ class UploadService : Service() {
         } catch (e: Exception) {
             SyncState.lastError = e.message ?: e.toString()
         } finally {
+            // Kick the server worker so tagging starts immediately instead of waiting
+            // for its next scheduled round (serve-only mode returns 400; ignore).
+            if (uploaded.get() > 0) {
+                Thread {
+                    try {
+                        val rb = Request.Builder().url("$base/api/worker/run").post(ByteArray(0).toRequestBody(null))
+                        if (token.isNotEmpty()) rb.header("X-API-Token", token)
+                        CLIENT.newCall(rb.build()).execute().close()
+                    } catch (_: Exception) {
+                    }
+                }.start()
+            }
             SyncState.running = false
             SyncState.finished = true
             SyncState.phase = "done"
