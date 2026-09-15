@@ -19,7 +19,7 @@ server/static/
 ## 2. Design system — "fresh redesign", dark, editorial
 
 - **Palette**: deeper ink background (`#0b0c10`-ish), elevated panels, hairline `rgba(255,255,255,.07)` borders; accent stays violet→pink gradient family (matches existing PWA icons) but used with more restraint; semantic colors: success/warn/error + rating colors (general=green, sensitive=yellow, questionable=orange, explicit=red pills).
-- **Typography**: larger scale (15px UI base, 20–24px section titles, 30px+ KPI numerals with `tabular-nums`), stronger weight hierarchy, tighter letter-spacing on headings.
+- **Typography** (landed): system-only stacks — UI: system-ui → SF/Segoe/Roboto/Noto (SC→JP CJK fallback, emoji fallback at the end); mono: ui-monospace stack with JetBrains/Cascadia fallbacks — plus a 10-step rem-based type-scale (`--fs-2xs` .6875rem/11px … `--fs-4xl` 22px, ~1.12 ratio) and a fluid `--fs-5xl` (clamp 24–34px) for KPI numerals. 15px UI base, 20px section titles, tighter letter-spacing on headings.
 - **Depth & motion**: subtle shadows, 150–220ms ease transitions, card hover lift + image scale, viewer crossfade; full `prefers-reduced-motion` disable.
 - Meta `theme-color` + manifest colors synced to new background.
 
