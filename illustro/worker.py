@@ -37,6 +37,7 @@ class Worker:
         self.last_error: Optional[str] = None
         # Round tracking for monitoring
         self._round_start = 0.0            # Wall-clock start of the current round
+        self._round_end = 0.0              # Wall-clock end of the current round (0 while running)
         self._rounds: list[dict] = []      # Ring buffer of completed round summaries
         if autostart:
             self.start()
@@ -94,6 +95,7 @@ class Worker:
                 self.total = 0
                 self.last_error = None
                 self._round_start = time.time()
+                self._round_end = 0.0
             round_processed = 0
             try:
                 build(self.cfg, stop_check=self._should_stop, progress_cb=self._progress)
@@ -104,6 +106,7 @@ class Worker:
             interrupted = self._should_stop()
             with self._lock:
                 round_end = time.time()
+                self._round_end = round_end
                 round_processed = self.processed
                 # Only record a real completion when the round wasn't interrupted by pause/stop
                 if not interrupted:
@@ -170,7 +173,12 @@ class Worker:
             else:
                 state = "idle"
             now = time.time()
-            elapsed = now - self._round_start if self._round_start else 0.0
+            # Freeze elapsed once the round ends so it doesn't keep ticking while idle/sleeping/paused
+            if self._round_start:
+                end = now if state == "running" else (self._round_end or now)
+                elapsed = max(0.0, end - self._round_start)
+            else:
+                elapsed = 0.0
             throughput = (self.processed / elapsed * 60) if elapsed > 0.1 and self.processed > 0 else 0.0
             eta = ((self.total - self.processed) / throughput * 60) if throughput > 0 and self.total > self.processed else 0.0
             return {

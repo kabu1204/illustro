@@ -399,13 +399,16 @@ button.primary:hover { filter: brightness(1.1); background: var(--grad); }
 .tab.on { color: var(--fg); border-bottom-color: var(--accent); font-weight: 700; }
 .sheet-body { overflow-y: auto; padding: 20px; min-height: 0; }
 
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .kpi {
   background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: 14px 16px;
+  min-width: 0;
+  container-type: inline-size;
 }
-.kpi b { font-size: var(--fs-5xl); font-weight: 800; display: block; font-variant-numeric: tabular-nums;
-  letter-spacing: -.02em; }
+.kpi b { font-size: var(--fs-4xl); font-size: min(var(--fs-5xl), 14cqi); font-weight: 800;
+  display: block; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  overflow-wrap: anywhere; }
 .kpi span { font-size: var(--fs-2xs); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; margin-top: 6px; }
 .brow { display: grid; grid-template-columns: minmax(90px, 180px) 1fr 52px; gap: 10px;
