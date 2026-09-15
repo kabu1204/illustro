@@ -29,6 +29,10 @@
       <div id="acBox" class="acbox" hidden role="listbox"></div>
     </div>
     <div class="hbtns">
+      <button id="btnLucky" class="iconbtn" title="Surprise me — random image" aria-label="Random image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.4" fill="currentColor" stroke="none"/><circle cx="15.8" cy="8.2" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="8.2" cy="15.8" r="1.4" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.4" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button id="btnMap" class="hbtn">Map</button>
       <button id="themeBtn" class="iconbtn" title="Toggle light/dark theme" aria-label="Toggle theme"></button>
       <button id="btnStats" class="hbtn">Analytics</button>
       <button id="btnUpload" class="hbtn primary">Upload</button>
@@ -60,11 +64,49 @@
   <div id="endmark" hidden></div>
 </main>
 
+<!-- Cluster map ("style map") -->
+<div id="mapView" hidden>
+  <div id="mapMain">
+    <canvas id="mapCanvas"></canvas>
+    <div id="mapTip" hidden></div>
+    <div id="mapState" class="gstate" hidden></div>
+    <div id="mapSpin" hidden><div class="spinner"></div></div>
+  </div>
+  <aside id="mapSide">
+    <div id="mapCtrl">
+      <select id="mapK" title="Number of clusters">
+        <option value="10">10 clusters</option>
+        <option value="20">20 clusters</option>
+        <option value="30" selected>30 clusters</option>
+        <option value="50">50 clusters</option>
+        <option value="80">80 clusters</option>
+      </select>
+      <button id="mapRecompute" title="Force recompute (ignores cache)">Recompute</button>
+    </div>
+    <div id="mapInfo"></div>
+    <div id="mapClusters"></div>
+  </aside>
+</div>
+
 <!-- Image viewer -->
 <div id="viewer" class="viewer" hidden role="dialog" aria-modal="true" aria-label="Image viewer">
   <div class="vimg-wrap" id="vWrap">
     <img id="vImg" alt="" />
     <div class="vload" id="vLoad" hidden><div class="spinner"></div></div>
+    <div class="vtop">
+      <button id="vSlide" class="vtbtn" title="Slideshow (Space)" aria-label="Toggle slideshow">
+        <svg id="vSlidePlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+        <svg id="vSlidePause" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+      </button>
+      <select id="vSlideInt" title="Slideshow interval">
+        <option value="3000">3s</option>
+        <option value="5000" selected>5s</option>
+        <option value="10000">10s</option>
+      </select>
+      <button id="vFull" class="vtbtn" title="Fullscreen" aria-label="Toggle fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
+      </button>
+    </div>
     <button class="vnav prev" id="vPrev" aria-label="Previous image">‹</button>
     <button class="vnav next" id="vNext" aria-label="Next image">›</button>
     <button class="vclose" id="vClose" aria-label="Close viewer">✕</button>

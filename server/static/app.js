@@ -3,9 +3,10 @@
    Sections:
      0. Utilities                4. Image viewer
      1. State + hash router      5. Analytics (Collection/Activity/Duplicates)
-     2. Search + autocomplete    6. Worker status pill
-     3. Gallery (masonry/scroll) 7. Upload / mobile sync (ported)
-                                 8. Keyboard · 9. Boot
+     2. Search + autocomplete    6. Cluster map ("style map")
+     3. Gallery (masonry/scroll) 7. Worker status pill
+                                 8. Upload / mobile sync (ported)
+                                 9. Keyboard · 10. Boot
    ========================================================================= */
 'use strict';
 
@@ -58,6 +59,7 @@ function applyTheme(theme) {
   // Charts read colors per next render cycle; discarding them forces a rebuild.
   if (roundChart) { roundChart.destroy(); roundChart = null; }
   if (latencyChart) { latencyChart.destroy(); latencyChart = null; }
+  if (typeof MAP !== 'undefined' && MAP.data) { MAP.colors = makeClusterColors(); drawMap(); }
 }
 on('#themeBtn', 'click', () =>
   applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
@@ -160,6 +162,7 @@ function route() {
   const mSimilar = path.match(/^\/similar\/(\d+)/);
   const mStats = path.match(/^\/stats(?:\/(activity|dupes))?/);
   const mUpload = path === '/upload';
+  const mMap = path === '/map';
 
   // Overlays
   if (mViewer) {
@@ -174,6 +177,8 @@ function route() {
   hideUpload();
 
   // Content views
+  if (mMap) { showMap(); return; }
+  hideMap();
   if (mSimilar) {
     enterSimilar(parseInt(mSimilar[1], 10), { push: false });
     return;
@@ -275,6 +280,7 @@ function submitSearch() {
   state.q = qInput.value.trim();
   state.view = 'gallery';
   state.similarOf = null;
+  hideMap();
   if (state.sort === 'random' && !state.seed) state.seed = (Math.random() * 2 ** 31) | 0;
   syncFilterUI();
   nav(galleryHash());
@@ -285,6 +291,7 @@ function submitSearch() {
 function applyGalleryChange({ push = false } = {}) {
   state.view = 'gallery';
   state.similarOf = null;
+  hideMap();
   if (state.sort === 'random' && !state.seed) state.seed = (Math.random() * 2 ** 31) | 0;
   syncFilterUI();
   nav(galleryHash(), { replace: !push });
@@ -534,6 +541,7 @@ async function enterSimilar(id, { push = true } = {}) {
   }
   const seq = ++state.reqSeq;
   if (push) nav('#/similar/' + id);
+  hideMap();
   state.view = 'similar';
   state.similarOf = id;
   state.items = [];
@@ -663,6 +671,7 @@ function renderViewerSidebar(img) {
     <div class="vactions">
       <button class="primary" id="vSim">Find similar</button>
       <button id="vOrig">Original</button>
+      <button id="vRand" title="Jump to a random image from the whole library">Random</button>
     </div>
     ${chars.length ? `<h3>Characters</h3><div>${chars.map(tagHtml).join('')}</div>` : ''}
     <h3>Tags</h3>
@@ -676,6 +685,7 @@ function renderViewerSidebar(img) {
     enterSimilar(id, { push: false });
   };
   $('#vOrig').onclick = () => window.open('/api/image/' + img.id);
+  $('#vRand').onclick = () => surprise();
   vSide.querySelectorAll('.tag').forEach((el) => {
     el.onclick = (e) => {
       const name = el.dataset.n;
@@ -707,12 +717,60 @@ async function stepViewer(d) {
   viewer.idx = next;
   if (viewer.pushed) history.replaceState(null, '', '#/i/' + viewer.list[next].id);
   showViewer();
+  if (slide.playing) restartSlideTimer(); // manual nav during playback: reset the clock
 }
+
+/* Slideshow: auto-advance via stepViewer (which auto-fetches the next gallery
+   page at the list end, so playback runs over the full result set). At the true
+   end of a finite list, loops back to the first image. */
+const slide = { timer: null, playing: false, iv: 5000 };
+
+function restartSlideTimer() {
+  clearInterval(slide.timer);
+  slide.timer = setInterval(slideTick, slide.iv);
+}
+function startSlide() {
+  if (slide.playing) return;
+  slide.playing = true;
+  restartSlideTimer();
+  syncSlideUI();
+}
+function stopSlide() {
+  if (!slide.playing) return;
+  slide.playing = false;
+  clearInterval(slide.timer);
+  slide.timer = null;
+  syncSlideUI();
+}
+const toggleSlide = () => (slide.playing ? stopSlide() : startSlide());
+function syncSlideUI() {
+  $('#vSlidePlay').hidden = slide.playing;
+  $('#vSlidePause').hidden = !slide.playing;
+  $('#vSlide').classList.toggle('playing', slide.playing);
+}
+async function slideTick() {
+  if (viewerEl.hidden) { stopSlide(); return; }
+  if (viewer.idx < viewer.list.length - 1) { await stepViewer(1); return; }
+  // At the end: gallery lists may still have pages to fetch (stepViewer handles
+  // it); anything else loops back to the start.
+  if (viewer.list === state.items && state.view === 'gallery' && !state.end) await stepViewer(1);
+  else if (viewer.list.length > 1) { viewer.idx = -1; await stepViewer(1); }
+}
+on('#vSlide', 'click', toggleSlide);
+on('#vSlideInt', 'change', () => {
+  slide.iv = +$('#vSlideInt').value;
+  if (slide.playing) restartSlideTimer();
+});
+on('#vFull', 'click', () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else viewerEl.requestFullscreen?.().catch(() => {});
+});
 
 function hideViewer() {
   if (viewerEl.hidden) return;
   viewerEl.hidden = true;
   vImg.src = '';
+  stopSlide();
   document.body.classList.remove('lock');
 }
 function closeViewer() {
@@ -993,7 +1051,357 @@ async function loadDupes() {
   }
 }
 
-/* ---------- 6. Worker status pill ---------- */
+/* ---------- 6. Cluster map ("style map") ----------
+   Interactive 2D dot cloud of all image embeddings, colored by spherical-KMeans
+   cluster. Custom canvas renderer (Chart.js is too slow at 20k points and can't
+   do the hit-testing). Payload from GET /api/clusters; member grids are pure
+   client-side filters of that payload — no extra endpoints. */
+const MAP = {
+  k: 30, data: null, dataK: 0,  // last payload + the k it was requested with
+  xs: null, ys: null, ids: null, cs: null, posInCluster: null,
+  byCluster: new Map(),        // cluster id -> [{id}, ...] (viewer lists / member grids)
+  colors: [],
+  view: { s: 1, ox: 0, oy: 0 }, fitS: 1,
+  bounds: null, grid: null, gridW: 0, gridH: 0, cell: 1,
+  selected: null, hover: -1, seq: 0, drawQueued: false,
+};
+const mapCanvas = $('#mapCanvas');
+const mctx = mapCanvas.getContext('2d');
+
+function makeClusterColors() {
+  const light = document.documentElement.dataset.theme === 'light';
+  const n = MAP.data ? Math.max(1, MAP.data.k) : 1;
+  return Array.from({ length: n }, (_, i) =>
+    `hsl(${Math.round((i * 137.508) % 360)} ${light ? 62 : 70}% ${light ? 46 : 62}%)`);
+}
+
+function showMap() {
+  const el = $('#mapView');
+  el.style.top = $('#hdr').offsetHeight + 'px'; // fixed, below the sticky header
+  el.hidden = false;
+  document.body.classList.add('lock');
+  $('#filterBar').hidden = true;
+  if (MAP.data && MAP.dataK === MAP.k) { resizeMapCanvas(); renderMapPanel(); queueDraw(); }
+  else loadMap(false);
+}
+
+function hideMap() {
+  const el = $('#mapView');
+  if (el.hidden) return;
+  el.hidden = true;
+  MAP.hover = -1;
+  $('#mapTip').hidden = true;
+  document.body.classList.remove('lock');
+  $('#filterBar').hidden = false;
+}
+
+async function loadMap(refresh) {
+  const seq = ++MAP.seq;
+  $('#mapSpin').hidden = false;
+  $('#mapState').hidden = true;
+  $('#mapRecompute').disabled = true;
+  try {
+    const d = await api(`/api/clusters?k=${MAP.k}${refresh ? '&refresh=1' : ''}`);
+    if (seq !== MAP.seq) return;
+    MAP.data = d;
+    MAP.dataK = MAP.k;
+    MAP.selected = null;
+    MAP.hover = -1;
+    if (!d.n) {
+      MAP.xs = null;
+      $('#mapClusters').innerHTML = '';
+      $('#mapInfo').textContent = '';
+      $('#mapState').hidden = false;
+      $('#mapState').innerHTML = '<b>No vectors yet.</b><br>Tag some images first (run a build / the worker), then reopen the map.';
+      return;
+    }
+    $('#mapState').hidden = true;
+    buildMapPoints(d);
+    resizeMapCanvas();
+    fitMapView();
+    renderMapPanel();
+    queueDraw();
+  } catch (e) {
+    if (seq !== MAP.seq) return;
+    $('#mapState').hidden = false;
+    $('#mapState').innerHTML = `<b>Failed to load clusters.</b><br>${esc(e.message)}`;
+    toast('Cluster map failed: ' + e.message, 'err');
+  } finally {
+    if (seq === MAP.seq) { $('#mapSpin').hidden = true; $('#mapRecompute').disabled = false; }
+  }
+}
+
+function buildMapPoints(d) {
+  const n = d.points.length;
+  MAP.xs = new Float32Array(n);
+  MAP.ys = new Float32Array(n);
+  MAP.ids = new Int32Array(n);
+  MAP.cs = new Int32Array(n);
+  MAP.posInCluster = new Int32Array(n);
+  MAP.byCluster = new Map();
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  d.points.forEach((p, i) => {
+    MAP.ids[i] = p[0]; MAP.xs[i] = p[1]; MAP.ys[i] = p[2]; MAP.cs[i] = p[3];
+    if (p[1] < minx) minx = p[1]; if (p[1] > maxx) maxx = p[1];
+    if (p[2] < miny) miny = p[2]; if (p[2] > maxy) maxy = p[2];
+    let list = MAP.byCluster.get(p[3]);
+    if (!list) { list = []; MAP.byCluster.set(p[3], list); }
+    MAP.posInCluster[i] = list.length;
+    list.push({ id: p[0] });
+  });
+  MAP.bounds = { minx, miny, maxx, maxy };
+  MAP.colors = makeClusterColors();
+  // Coarse spatial grid for O(1) hover hit-testing
+  const bw = Math.max(maxx - minx, 1e-6), bh = Math.max(maxy - miny, 1e-6);
+  MAP.cell = Math.max(bw, bh) / 100;
+  MAP.gridW = Math.ceil(bw / MAP.cell) + 1;
+  MAP.gridH = Math.ceil(bh / MAP.cell) + 1;
+  MAP.grid = new Map();
+  for (let i = 0; i < n; i++) {
+    const gx = Math.floor((MAP.xs[i] - minx) / MAP.cell);
+    const gy = Math.floor((MAP.ys[i] - miny) / MAP.cell);
+    const key = gx + gy * MAP.gridW;
+    let arr = MAP.grid.get(key);
+    if (!arr) { arr = []; MAP.grid.set(key, arr); }
+    arr.push(i);
+  }
+}
+
+function resizeMapCanvas() {
+  const r = $('#mapMain').getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  mapCanvas.width = Math.max(1, Math.round(r.width * dpr));
+  mapCanvas.height = Math.max(1, Math.round(r.height * dpr));
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function fitMapView() {
+  const r = $('#mapMain').getBoundingClientRect();
+  const b = MAP.bounds;
+  const bw = Math.max(b.maxx - b.minx, 1e-6), bh = Math.max(b.maxy - b.miny, 1e-6);
+  const s = Math.min(r.width / bw, r.height / bh) * 0.92;
+  MAP.view.s = s;
+  MAP.fitS = s;
+  MAP.view.ox = (r.width - bw * s) / 2 - b.minx * s;
+  MAP.view.oy = (r.height - bh * s) / 2 - b.miny * s;
+}
+
+function queueDraw() {
+  if (MAP.drawQueued) return;
+  MAP.drawQueued = true;
+  requestAnimationFrame(() => { MAP.drawQueued = false; drawMap(); });
+}
+
+function drawMap() {
+  if (!MAP.xs || $('#mapView').hidden) return;
+  const r = $('#mapMain').getBoundingClientRect();
+  const { s, ox, oy } = MAP.view;
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg0').trim() || '#0a0b0f';
+  mctx.fillStyle = bg;
+  mctx.fillRect(0, 0, r.width, r.height);
+  const rad = Math.max(1.6, Math.min(5, 1.6 * Math.pow(s / MAP.fitS, 0.25)));
+  const sel = MAP.selected;
+  for (let pass = 0; pass < (sel == null ? 1 : 2); pass++) {
+    // pass 0: dimmed unselected points; pass 1: selected cluster on top
+    mctx.globalAlpha = sel == null ? 0.85 : pass === 0 ? 0.07 : 0.95;
+    for (let i = 0; i < MAP.xs.length; i++) {
+      const c = MAP.cs[i];
+      if (sel != null && (pass === 0) === (c === sel)) continue;
+      const x = MAP.xs[i] * s + ox, y = MAP.ys[i] * s + oy;
+      if (x < -8 || y < -8 || x > r.width + 8 || y > r.height + 8) continue;
+      mctx.fillStyle = MAP.colors[c] || '#888';
+      mctx.beginPath();
+      mctx.arc(x, y, rad, 0, 6.2832);
+      mctx.fill();
+    }
+  }
+  mctx.globalAlpha = 1;
+  if (MAP.hover >= 0) {
+    const i = MAP.hover;
+    mctx.strokeStyle = '#fff';
+    mctx.lineWidth = 1.5;
+    mctx.beginPath();
+    mctx.arc(MAP.xs[i] * s + ox, MAP.ys[i] * s + oy, rad + 2.5, 0, 6.2832);
+    mctx.stroke();
+  }
+}
+
+const screenToWorld = (px, py) => ({ x: (px - MAP.view.ox) / MAP.view.s, y: (py - MAP.view.oy) / MAP.view.s });
+
+function nearestPoint(px, py, radiusPx) {
+  const w = screenToWorld(px, py);
+  const rad = radiusPx / MAP.view.s;
+  const b = MAP.bounds;
+  const cgx = Math.floor((w.x - b.minx) / MAP.cell), cgy = Math.floor((w.y - b.miny) / MAP.cell);
+  const span = Math.ceil(rad / MAP.cell);
+  let best = -1, bestD = rad * rad;
+  for (let gy = cgy - span; gy <= cgy + span; gy++) {
+    for (let gx = cgx - span; gx <= cgx + span; gx++) {
+      const arr = MAP.grid.get(gx + gy * MAP.gridW);
+      if (!arr) continue;
+      for (const i of arr) {
+        const dx = MAP.xs[i] - w.x, dy = MAP.ys[i] - w.y;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = i; }
+      }
+    }
+  }
+  return best;
+}
+
+function mapEventPos(e) {
+  const r = mapCanvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+let mapDrag = null;
+mapCanvas.addEventListener('pointerdown', (e) => {
+  mapCanvas.setPointerCapture(e.pointerId);
+  const p = mapEventPos(e);
+  mapDrag = { x: p.x, y: p.y, ox: MAP.view.ox, oy: MAP.view.oy, moved: false };
+  mapCanvas.classList.add('drag');
+});
+mapCanvas.addEventListener('pointermove', (e) => {
+  const p = mapEventPos(e);
+  if (mapDrag) {
+    const dx = p.x - mapDrag.x, dy = p.y - mapDrag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) mapDrag.moved = true;
+    MAP.view.ox = mapDrag.ox + dx;
+    MAP.view.oy = mapDrag.oy + dy;
+    $('#mapTip').hidden = true;
+    queueDraw();
+    return;
+  }
+  const i = MAP.xs ? nearestPoint(p.x, p.y, 14) : -1;
+  if (i !== MAP.hover) {
+    MAP.hover = i;
+    queueDraw();
+    const tip = $('#mapTip');
+    if (i >= 0) {
+      tip.innerHTML = `<img src="/api/thumb/${MAP.ids[i]}" alt=""><div class="t">#${MAP.ids[i]}</div>`;
+      tip.hidden = false;
+    } else tip.hidden = true;
+  }
+  if (i >= 0) {
+    const tip = $('#mapTip');
+    const mr = $('#mapMain').getBoundingClientRect();
+    tip.style.left = Math.min(p.x + 16, mr.width - 116) + 'px';
+    tip.style.top = Math.min(p.y + 16, mr.height - 130) + 'px';
+  }
+});
+mapCanvas.addEventListener('pointerup', (e) => {
+  mapCanvas.classList.remove('drag');
+  const wasClick = mapDrag && !mapDrag.moved;
+  mapDrag = null;
+  if (!wasClick || MAP.hover < 0) return;
+  const c = MAP.cs[MAP.hover];
+  openViewer(MAP.byCluster.get(c), MAP.posInCluster[MAP.hover], { push: true });
+});
+mapCanvas.addEventListener('pointerleave', () => {
+  MAP.hover = -1;
+  $('#mapTip').hidden = true;
+  queueDraw();
+});
+mapCanvas.addEventListener('wheel', (e) => {
+  if (!MAP.xs) return;
+  e.preventDefault();
+  const p = mapEventPos(e);
+  const w = screenToWorld(p.x, p.y);
+  const s = Math.max(MAP.fitS * 0.5, Math.min(MAP.fitS * 100, MAP.view.s * Math.exp(-e.deltaY * 0.0012)));
+  MAP.view.s = s;
+  MAP.view.ox = p.x - w.x * s;
+  MAP.view.oy = p.y - w.y * s;
+  queueDraw();
+}, { passive: false });
+mapCanvas.addEventListener('dblclick', () => { if (MAP.xs) { fitMapView(); queueDraw(); } });
+
+window.addEventListener('resize', debounce(() => {
+  if ($('#mapView').hidden) return;
+  $('#mapView').style.top = $('#hdr').offsetHeight + 'px';
+  resizeMapCanvas();
+  queueDraw();
+}, 150));
+
+function selectCluster(cid) {
+  MAP.selected = MAP.selected === cid ? null : cid;
+  queueDraw();
+  $$('#mapClusters .mcl').forEach((el) => el.classList.toggle('on', +el.dataset.c === MAP.selected));
+}
+
+function renderMapPanel() {
+  const d = MAP.data;
+  $('#mapInfo').textContent = d
+    ? `${fmtNum(d.n)} images · ${d.clusters.length} clusters · computed ${d.computed_at || '—'}`
+    : '';
+  const box = $('#mapClusters');
+  box.innerHTML = '';
+  if (!d || !d.n) return;
+  d.clusters.forEach((c) => {
+    const card = document.createElement('div');
+    card.className = 'mcl' + (MAP.selected === c.id ? ' on' : '');
+    card.dataset.c = c.id;
+    const tags = (c.top_tags || []).slice(0, 5).map((t) =>
+      `<b>${esc(t.zh || t.name)}</b> <span class="pc">${Math.round(t.share * 100)}%</span>`).join(' · ');
+    card.innerHTML = `
+      <div class="mcl-head">
+        <span class="cdot" style="background:${MAP.colors[c.id] || '#888'}"></span>
+        <b>#${c.id}</b><span class="cnt">${fmtNum(c.count)} images</span>
+        ${c.avg_color ? `<span class="sw" style="background:${esc(c.avg_color)}" title="${esc(c.avg_color)}"></span>` : ''}
+      </div>
+      <div class="mcl-tags">${tags || '<span style="opacity:.6">no distinctive tags</span>'}</div>
+      <div class="mcl-reps">${(c.reps || []).slice(0, 4).map((id) =>
+        `<img loading="lazy" decoding="async" src="/api/thumb/${id}" alt="#${id}">`).join('')}</div>
+      <div class="mcl-detail" hidden></div>`;
+    card.querySelector('.mcl-head').onclick = () => {
+      selectCluster(c.id);
+      const det = card.querySelector('.mcl-detail');
+      if (MAP.selected === c.id && det.hidden) { det.hidden = false; fillClusterDetail(det, c); }
+      else if (MAP.selected !== c.id) det.hidden = true;
+    };
+    card.querySelector('.mcl-tags').onclick = card.querySelector('.mcl-reps').onclick =
+      () => card.querySelector('.mcl-head').onclick();
+    box.appendChild(card);
+  });
+}
+
+function fillClusterDetail(det, c) {
+  const tags = (c.top_tags || []).map((t) =>
+    `<b>${esc(t.zh || t.name)}</b> <span class="pc">${Math.round(t.share * 100)}%</span>`).join(' · ');
+  const rd = Object.entries(c.rating_dist || {}).map(([r, n]) => `${r[0]}:${fmtNum(n)}`).join('  ');
+  det.innerHTML = `
+    <div class="mcl-tags">${tags}</div>
+    <div class="mcl-rate">${esc(rd)}</div>
+    <div class="mcl-grid"></div>`;
+  const grid = det.querySelector('.mcl-grid');
+  const members = MAP.byCluster.get(c.id) || [];
+  let shown = 0;
+  const CHUNK = 96;
+  const more = document.createElement('button');
+  more.className = 'mcl-more';
+  const addChunk = () => {
+    const end = Math.min(shown + CHUNK, members.length);
+    for (let i = shown; i < end; i++) {
+      const im = document.createElement('img');
+      im.loading = 'lazy';
+      im.decoding = 'async';
+      im.src = '/api/thumb/' + members[i].id;
+      im.alt = '#' + members[i].id;
+      im.onclick = (e) => { e.stopPropagation(); openViewer(members, i, { push: true }); };
+      grid.appendChild(im);
+    }
+    shown = end;
+    more.textContent = `Load more (${fmtNum(members.length - shown)} remaining)`;
+    more.hidden = shown >= members.length;
+  };
+  more.onclick = (e) => { e.stopPropagation(); addChunk(); };
+  det.appendChild(more);
+  addChunk();
+}
+
+on('#mapK', 'change', () => { MAP.k = +$('#mapK').value; loadMap(false); });
+on('#mapRecompute', 'click', () => loadMap(true));
+
+/* ---------- 7. Worker status pill ---------- */
 const pill = $('#workerPill');
 pill.addEventListener('click', () => openStats('activity'));
 
@@ -1014,7 +1422,7 @@ function renderPill(w) {
   pill.innerHTML = `<span class="wdot ${cls}"></span>${label}${prog} · ${fmtNum(w.remaining)} pending${warn}`;
 }
 
-/* ---------- 7. Upload / mobile sync (ported from the legacy single-file UI) ----
+/* ---------- 8. Upload / mobile sync (ported from the legacy single-file UI) ----
    Design notes (unchanged):
    - One file per request; server streams to disk and re-verifies sha256.
    - Dedup at three levels: (1) per-file metadata cache (name|size|mtime -> hash)
@@ -1456,7 +1864,7 @@ function clearDone() {
 }
 upLoadPersisted();
 
-/* ---------- 8. Keyboard ---------- */
+/* ---------- 9. Keyboard ---------- */
 document.addEventListener('keydown', (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
@@ -1471,7 +1879,13 @@ document.addEventListener('keydown', (e) => {
     if (!viewerEl.hidden) { closeViewer(); return; }
     if (!statsEl.hidden) { closeStats(); return; }
     if (!$('#upload').hidden) { closeUpload(); return; }
+    if (!$('#mapView').hidden) { nav('#/'); route(); return; }
     if (inField) document.activeElement.blur();
+    return;
+  }
+  if (e.key === ' ' && !viewerEl.hidden && !inField && tag !== 'BUTTON') {
+    e.preventDefault();
+    toggleSlide();
     return;
   }
   if (!viewerEl.hidden && !inField) {
@@ -1480,10 +1894,27 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* ---------- 9. Boot ---------- */
+/* ---------- 10. Boot ---------- */
 applyTheme(document.documentElement.dataset.theme); // sync icon/meta (theme set pre-paint inline)
 on('#btnStats', 'click', () => openStats('collection'));
 on('#btnUpload', 'click', () => { nav('#/upload'); uploadPushed = true; openUpload(); });
+on('#btnMap', 'click', () => { nav('#/map'); showMap(); });
+on('#btnLucky', 'click', () => surprise());
+
+/* Surprise me: reset to a fresh shuffle of the whole library and open the first
+   image full-screen; arrows / slideshow then walk the shuffled order. */
+async function surprise() {
+  hideMap();
+  Object.assign(state, {
+    q: '', include: [], exclude: [], rating: [],
+    sort: 'random', seed: (Math.random() * 2 ** 31) | 0,
+    view: 'gallery', similarOf: null,
+  });
+  syncFilterUI();
+  nav(galleryHash());
+  await loadFirstPage();
+  if (state.items.length) openViewerAt(0);
+}
 
 // PWA share target: the service worker uploads shared files, then redirects to /?shared=...
 (function handleShareLanding() {

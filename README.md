@@ -7,7 +7,9 @@ Fully offline, anime-native. Runs on RTX 4060 (CUDA), Intel N100 iGPU (OpenVINO)
 
 - **Chinese/tag search**: Search "blue_hair school_uniform" or Chinese equivalents, get instant results.
 - **Find similar**: Click any image -> find the closest matches by art style/composition using image vectors.
+- **Style map**: Cluster all image vectors (spherical KMeans) into tens of groups, see each cluster's signature tags/keywords, and explore the whole library as a zoomable 2D dot cloud.
 - **Collection analytics**: Top tags / character rankings, rating distribution, dominant colors, orientation, near-duplicate detection.
+- **Slideshow & random**: Auto-advance slideshow in the viewer (Space to play/pause, 3/5/10s, loops the full result set), plus a one-click "surprise me" random image.
 - **Incremental**: Drop new images into your directory, re-run and only new files are processed.
 - **Background worker**: In single-container mode, a background thread continuously scans and tags new images. Pause/resume/trigger from the UI.
 - **Mobile sync**: One-way upload from an Android phone: bulk folder backfill or system share sheet (installable PWA). Content-hash dedup, resumable, nothing sent twice.
@@ -19,7 +21,8 @@ Fully offline, anime-native. Runs on RTX 4060 (CUDA), Intel N100 iGPU (OpenVINO)
 |---|---|---|
 | Tagging + image vectors | `wd14-with-embeddings` (ONNX) | One model, one forward pass: danbooru tags + anime-domain image embedding |
 | Chinese exact search | Bilingual tag table + longest-match parsing | Chinese query -> danbooru English tags -> exact `image_tags` filter, avoiding FTS Chinese tokenization pitfalls |
-| Similar / nearest neighbor | Tagger image vectors + hnswlib | In-domain vectors, better suited for anime than generic CLIP |
+| Similar / nearest neighbor | Tagger image vectors + numpy cosine | In-domain vectors, better suited for anime than generic CLIP |
+| Style map (clusters) | Spherical KMeans + PCA (pure numpy) | No sklearn/umap dependency; result disk-cached, recomputed when vectors change |
 | Metadata / tags | SQLite | Incremental, queryable |
 | UI | FastAPI + single-file frontend | Local web page, masonry gallery |
 | Deployment | Docker (single container) | TrueNAS SCALE / N100 / OpenVINO iGPU |
@@ -44,8 +47,9 @@ illustration/
 │  ├─ db.py                  # SQLite (images / tags / image_tags)
 │  ├─ tagger.py              # WD14 ONNX inference: tags + vectors
 │  ├─ tags_zh.py             # Chinese query parsing (longest match)
-│  ├─ index.py               # hnswlib vector index
+│  ├─ index.py               # Vector store (numpy brute-force cosine)
 │  ├─ search.py              # Hybrid search (tags + vectors)
+│  ├─ cluster.py             # Style map: spherical KMeans + PCA 2D projection (cached)
 │  ├─ analyze.py             # Collection statistics
 │  ├─ pipeline.py            # scan->tag->index orchestration
 │  ├─ worker.py              # Background worker (pause/resume/stop, incremental auto-scan)
@@ -113,6 +117,14 @@ python -m illustro.cli reset
 
 ~15-30 min for 15k-20k images on a 4060 (tagging+vectorization, one-time). After that, search/similarity are millisecond-level.
 
+### Viewer shortcuts & slideshow
+
+`/` focus search · `←`/`→` previous/next image · `Esc` close · **Space** play/pause slideshow.
+The slideshow (3/5/10s interval, fullscreen button included) walks the entire current result
+set — gallery pages are fetched as it goes, finite lists loop. The dice button in the header
+(**Surprise me**) reshuffles the whole library and opens a random image; **Random** in the
+viewer sidebar does the same without leaving the viewer.
+
 ### Docker deployment
 
 For TrueNAS SCALE / N100 / OpenVINO deployment, see [docker/README.md](docker/README.md).
@@ -162,8 +174,19 @@ original file's modification time (`mtime_ms`, epoch milliseconds) — the serve
 stored file with it, so the library keeps "when was this saved" instead of "when was it
 uploaded" (records `added_at` separately).
 
-## How Chinese search works
+## Style map (cluster visualization)
 
+Click **Map** in the header: all embedded images are clustered by their tagger vectors
+(spherical KMeans on PCA-reduced embeddings, pure numpy — no sklearn) and drawn as a
+2D dot cloud (PCA projection). Each cluster card shows its signature tags (the tags
+most over-represented in that cluster — its "style"), average color, rating mix, and
+representative images. Wheel-zoom / drag to explore, hover for a preview, click a dot
+to open the image, click a cluster card to isolate it and browse all its members.
+
+Cluster count is selectable (10–80). Results are cached in `data/clusters_k*.json` and
+recomputed automatically when the vector matrix changes; **Recompute** forces a refresh.
+
+## How Chinese search works
 Danbooru tags are in English (`blue_hair`), so Chinese search relies on the bilingual table at
 `illustro/data/tags_zh.json` (English tag -> Chinese). Chinese input is parsed using **longest match**
 (even concatenated input like "蓝发和服" is split correctly), converted to English tag sets,
@@ -184,7 +207,7 @@ The danbooru wiki has community-maintained Chinese tag translations you can bulk
 
 ## Design decisions
 
-- **Vector index**: At 20k images, brute-force numpy cosine is fast enough; hnswlib is used for incremental-friendly growth and future scalability.
+- **Vector index**: At 20k images, brute-force numpy cosine is a few milliseconds per query, so hnswlib was dropped in favor of pure numpy (no native builds; an hnswlib binary compiled with AVX-512 crashes on N100). Same reasoning for the style map: spherical KMeans + PCA in pure numpy instead of sklearn/umap-learn.
 - **Deduplication**: dHash finds near-duplicates (robust to scaling/light compression); `/api/duplicates` and stats show grouped suspected duplicates for easy cleanup.
 - **Rating**: WD14 outputs general/sensitive/questionable/explicit; UI can filter by rating.
 - **Background worker**: In `serve-all` mode, a daemon thread runs incremental builds on a configurable interval. The web UI shows live progress and exposes pause/resume/trigger controls. Graceful shutdown on `docker stop` / Ctrl+C.

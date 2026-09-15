@@ -5,7 +5,8 @@
      1. Tokens / base            5. Gallery (masonry, cards, skeletons)
      2. Header + search + AC     6. Viewer
      3. Filter bar               7. Sheet (analytics/upload) + tabs
-     4. Meta / banner            8. Upload widgets · 9. Toasts · 10. Responsive
+     4. Meta / banner            8. Upload widgets · 9. Toasts
+                                 11. Cluster map · 12. Responsive
    ========================================================================= */
 
 /* ---------- 1. Tokens / base ---------- */
@@ -497,7 +498,80 @@ button.primary:hover { filter: brightness(1.1); background: var(--grad); }
 .toast.out { opacity: 0; transform: translateX(12px); transition: .25s var(--ease); }
 @keyframes toastin { from { opacity: 0; transform: translateX(16px); } }
 
-/* ---------- 10. Responsive ---------- */
+/* ---------- 11. Cluster map ---------- */
+#mapView {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+  display: flex; background: var(--bg0);
+}
+#mapMain { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+#mapCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  cursor: grab; touch-action: none; }
+#mapCanvas.drag { cursor: grabbing; }
+#mapTip {
+  position: absolute; z-index: 2; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--line2); border-radius: var(--r-sm);
+  padding: 5px; box-shadow: var(--shadow);
+}
+#mapTip img { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: 5px; }
+#mapTip .t { font: var(--fs-2xs) var(--mono); color: var(--muted); text-align: center; margin-top: 3px; }
+#mapSpin { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg0); z-index: 3; }
+#mapState { position: absolute; inset: 0; z-index: 3; }
+#mapSide {
+  width: 340px; flex: none; border-left: 1px solid var(--line);
+  overflow-y: auto; padding: 14px; background: var(--panel);
+  scrollbar-width: thin; scrollbar-color: #2b3040 transparent;
+}
+#mapCtrl { display: flex; gap: 8px; align-items: center; }
+#mapK {
+  background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 999px; padding: 6px 12px; font: 600 var(--fs-sm) var(--font);
+  outline: none; cursor: pointer;
+}
+#mapRecompute { padding: 7px 13px; font-size: var(--fs-sm); }
+#mapInfo { color: var(--muted); font-size: var(--fs-xs); margin: 10px 2px; }
+.mcl { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 12px;
+  margin-bottom: 10px; background: var(--panel2); cursor: pointer;
+  transition: border-color .15s var(--ease); }
+.mcl:hover { border-color: var(--line2); }
+.mcl.on { border-color: var(--accent); }
+.mcl-head { display: flex; align-items: center; gap: 8px; }
+.mcl-head .cdot { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+.mcl-head b { font: 700 var(--fs-sm) var(--mono); }
+.mcl-head .cnt { color: var(--muted); font-size: var(--fs-xs); }
+.mcl-head .sw { margin-left: auto; width: 14px; height: 14px; border-radius: 4px;
+  border: 1px solid var(--line2); flex: none; }
+.mcl-tags { margin-top: 7px; font-size: var(--fs-xs); color: var(--muted); line-height: 1.8; }
+.mcl-tags b { color: var(--fg); font-weight: 600; }
+.mcl-tags .pc { font: var(--fs-2xs) var(--mono); opacity: .75; }
+.mcl-reps { display: flex; gap: 6px; margin-top: 8px; }
+.mcl-reps img { width: 25%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; display: block; }
+.mcl-rate { margin-top: 8px; font: var(--fs-2xs) var(--mono); color: var(--muted); }
+.mcl-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+.mcl-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px;
+  cursor: zoom-in; display: block; transition: transform .15s var(--ease); }
+.mcl-grid img:hover { transform: scale(1.05); }
+.mcl-more { width: 100%; margin-top: 8px; padding: 7px; font-size: var(--fs-xs); }
+
+/* viewer top-left controls (slideshow / fullscreen) */
+.vtop { position: absolute; top: 16px; left: 16px; z-index: 3; display: flex; gap: 8px; align-items: center; }
+.vtbtn {
+  width: 40px; height: 40px; padding: 0; border-radius: 50%;
+  background: rgba(20, 22, 30, .8); display: grid; place-items: center; color: var(--fg);
+}
+.vtbtn svg { width: 16px; height: 16px; }
+.vtbtn.playing { background: var(--accent); border-color: var(--accent); color: #fff; }
+#vSlideInt {
+  background: rgba(20, 22, 30, .8); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 999px; padding: 6px 10px; font: 600 var(--fs-sm) var(--font);
+  outline: none; cursor: pointer;
+}
+
+/* ---------- 12. Responsive ---------- */
+@media (max-width: 900px) {
+  #mapView { flex-direction: column; }
+  #mapSide { width: auto; height: 38%; border-left: none; border-top: 1px solid var(--line); }
+  .mcl-reps img { width: 25%; }
+}
 @media (max-width: 900px) {
   .viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .vside {

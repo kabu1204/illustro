@@ -8,18 +8,21 @@ import hashlib
 import io
 import os
 import re
+import threading
 import time
 import uuid
 from collections import deque
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
 from illustro.analyze import duplicate_clusters, overview
+from illustro.cluster import get_clusters
 from illustro.config import Config
 from illustro.db import DB
 from illustro.index import VectorStore
@@ -87,6 +90,7 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
             worker.stop()
 
     app = FastAPI(title="illustro", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=100_000)  # /api/clusters payload is ~1MB at 20k images
     db = DB(cfg.db_path)
     store = VectorStore(cfg)
     searcher = Searcher(cfg, db, store)
@@ -145,6 +149,17 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
     @app.get("/api/duplicates")
     def api_duplicates():
         return JSONResponse({"clusters": duplicate_clusters(db)})
+
+    # ---- Cluster analysis ("style map") ----
+    # Serialized: a cold compute takes seconds at 20k; concurrent identical
+    # requests should queue behind one computation, then hit the disk cache.
+    cluster_lock = threading.Lock()
+
+    @app.get("/api/clusters")
+    def api_clusters(k: int = 30, refresh: int = 0):
+        k = max(5, min(k, 100))
+        with cluster_lock:
+            return JSONResponse(get_clusters(store, db, cfg.data_path, k, refresh=bool(refresh)))
 
     # ---- Background worker controls (available in single-container mode) ----
     def worker_payload() -> dict:
