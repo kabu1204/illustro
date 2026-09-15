@@ -101,12 +101,17 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
         exclude: str = "",
         rating: str = "",
         page: int = 1,
+        sort: str = "new",
+        seed: int = 0,
     ):
         t0 = time.perf_counter()
         inc = [x for x in include.split(",") if x]
         exc = [x for x in exclude.split(",") if x]
         rat = [x for x in rating.split(",") if x]
-        res = searcher.search(q, include=inc, exclude=exc, rating=rat or None, page=page)
+        if sort not in ("new", "old", "random"):
+            sort = "new"
+        res = searcher.search(q, include=inc, exclude=exc, rating=rat or None, page=page,
+                              sort=sort, seed=max(0, min(seed, 2**31 - 1)))
         query_latencies.append({"endpoint": "search", "latency_ms": (time.perf_counter() - t0) * 1000, "ts": time.time()})
         return JSONResponse(
             {
@@ -198,6 +203,14 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
         if not row:
             return Response(status_code=404)
         return FileResponse(row["path"])
+
+    @app.get("/api/image_info/{image_id}")
+    def api_image_info(image_id: int):
+        """Metadata + tags for one image (viewer deep links, duplicate inspection)."""
+        info = searcher.image_info(image_id)
+        if info is None:
+            return Response(status_code=404)
+        return JSONResponse(info)
 
 
     # ---- Mobile sync: one-way upload (phone -> server) ----

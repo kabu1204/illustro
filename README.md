@@ -53,7 +53,9 @@ illustration/
 │  └─ data/tags_zh.json      # Bilingual tag starter table (extensible)
 ├─ server/
 │  ├─ app.py                 # FastAPI endpoints
-│  ├─ static/index.html      # Frontend gallery + upload page
+│  ├─ static/index.html      # Frontend skeleton (no build step, no framework)
+│  ├─ static/style.css       # Design system (tokens + all component styles)
+│  ├─ static/app.js          # Gallery / viewer / analytics / upload logic
 │  ├─ static/sha256.js       # Streaming SHA-256 (plain-HTTP fallback for client-side hashing)
 │  ├─ static/sw.js           # Service worker: Android share target -> /api/sync/upload
 │  ├─ static/manifest.webmanifest  # PWA manifest (installable, share target)

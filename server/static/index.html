@@ -2,933 +2,151 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>illustro - Illustration Search</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>illustro — Illustration Search</title>
 <link rel="manifest" href="/manifest.webmanifest" />
-<meta name="theme-color" content="#14151a" />
-<style>
-  :root {
-    --bg: #14151a; --panel: #1d1f27; --panel2: #262934;
-    --fg: #e8e9ee; --muted: #9aa0ad; --accent: #8a7cff; --accent2: #ff7cc3;
-    --line: #2d313d;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
-  header { position: sticky; top: 0; z-index: 20; background: rgba(20,21,26,.92);
-    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 12px 18px; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .logo { font-weight: 700; letter-spacing: .5px; margin-right: 6px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; background-clip: text; color: transparent; }
-  input#q { flex: 1; min-width: 220px; background: var(--panel2); border: 1px solid var(--line);
-    color: var(--fg); padding: 10px 14px; border-radius: 10px; font-size: 15px; outline: none; }
-  input#q:focus { border-color: var(--accent); }
-  button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
-    padding: 9px 14px; border-radius: 10px; cursor: pointer; font-size: 14px; }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: linear-gradient(90deg, var(--accent), var(--accent2)); border: none; color: #fff; }
-  .chips { gap: 6px; margin-top: 8px; }
-  .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel2);
-    border: 1px solid var(--line); cursor: pointer; user-select: none; }
-  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .chip.exc { background: #5a2330; border-color: #7a3040; color: #ffd7df; }
-  .meta { color: var(--muted); font-size: 13px; margin: 10px 18px 0; }
-  #grid { columns: 240px; column-gap: 12px; padding: 14px 18px 60px; }
-  .card { break-inside: avoid; margin-bottom: 12px; position: relative; border-radius: 12px;
-    overflow: hidden; background: var(--panel); cursor: zoom-in; border: 1px solid var(--line); }
-  .card img { width: 100%; display: block; }
-  .card .rt { position: absolute; top: 6px; right: 6px; font-size: 10px; padding: 2px 6px;
-    border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; }
-  .more { display: block; margin: 10px auto 40px; }
-  /* modal */
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none;
-    z-index: 40; padding: 24px; }
-  .modal.open { display: flex; gap: 20px; }
-  .modal .imgwrap { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
-  .modal img { max-width: 100%; max-height: calc(100vh - 48px); border-radius: 10px; }
-  .side { width: 340px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 12px; padding: 16px; overflow-y: auto; max-height: calc(100vh - 48px); }
-  .side h3 { margin: 0 0 4px; font-size: 14px; color: var(--muted); }
-  .tag { display: inline-block; margin: 3px 4px 0 0; padding: 3px 8px; border-radius: 8px;
-    font-size: 12px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
-  .tag.char { background: #2a2140; border-color: #4a3a7a; }
-  .tag .c { color: var(--muted); font-size: 10px; margin-left: 4px; }
-  .close { position: absolute; top: 16px; right: 22px; font-size: 26px; cursor: pointer; color: #fff; }
-  /* stats */
-  #stats { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 50; display: none;
-    overflow-y: auto; padding: 30px; }
-  #stats.open { display: block; }
-  .scard { max-width: 1000px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; padding: 22px; }
-  .kpis { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
-  .kpi { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px 18px; min-width: 120px; }
-  .kpi b { font-size: 24px; display: block; }
-  .bar { height: 18px; border-radius: 6px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
-  .brow { display: grid; grid-template-columns: 120px 1fr 50px; gap: 8px; align-items: center;
-    margin: 4px 0; font-size: 13px; }
-  .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; vertical-align: middle; }
-  a { color: var(--accent); }
-  .worker { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-left:auto; }
-  .wdot { width:8px; height:8px; border-radius:50%; background:var(--muted); display:inline-block; flex:none; }
-  .wdot.run { background:#37d67a; animation: wpulse 1.2s infinite; }
-  .wdot.pause { background:#f5a524; }
-  .wdot.sleep { background:#4aa3a3; }
-  .wdot.stop { background:#888; }
-  @keyframes wpulse { 0%,100%{opacity:1} 50%{opacity:.25} }
-  .worker button { padding:3px 9px; font-size:11px; }
-  /* monitor dashboard */
-  #monitor { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 18px 60px; }
-  #monitor.open { display: block; }
-  .msection { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    padding: 20px; margin-bottom: 18px; }
-  .msection h2 { margin: 0 0 14px; font-size: 17px; }
-  .mkpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-  .mkpi { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-    padding: 10px 16px; min-width: 100px; }
-  .mkpi b { font-size: 22px; display: block; }
-  .mkpi span { font-size: 11px; color: var(--muted); }
-  .chart-wrap { position: relative; height: 220px; margin-top: 8px; }
-  .latency-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 12px; }
-  .lat-stats-tbl { font-size: 13px; width: 100%; }
-  .lat-stats-tbl th, .lat-stats-tbl td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
-  .lat-stats-tbl th { color: var(--muted); font-weight: 400; font-size: 11px; }
-  .bench-box { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px 16px; font-size: 13px; line-height: 1.6; }
-  .bench-box b { color: var(--accent); }
-  .err-box { background: #3a1a1a; border: 1px solid #6a2a2a; border-radius: 8px; padding: 8px 12px;
-    font-size: 12px; color: #ffb0b0; margin-top: 10px; }
-  /* upload / mobile sync */
-  #upload { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 50; display: none;
-    overflow-y: auto; padding: 30px 14px; }
-  #upload.open { display: block; }
-  .ucard { max-width: 860px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; padding: 22px; }
-  .ukpis { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 14px; }
-  .ukpis b { color: var(--fg); }
-  .upbar { height: 10px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin: 10px 0; }
-  .upbar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; }
-  #upToken { background: var(--panel2); border: 1px solid var(--line); color: var(--fg);
-    padding: 9px 10px; border-radius: 10px; font-size: 13px; min-width: 150px; }
-  #upList { max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid var(--line);
-    border-radius: 8px; }
-  .ufile { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; font-size: 12px;
-    padding: 5px 8px; border-bottom: 1px solid var(--line); align-items: center; }
-  .ufile .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
-  .ufile .st { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--panel2);
-    color: var(--muted); white-space: nowrap; }
-  .st.done { background: #1d3a29; color: #7ee2a8; }
-  .st.dup, .st.skip { background: #2a2a3d; color: #aab4ff; }
-  .st.err { background: #3a1a1a; color: #ffb0b0; }
-  .st.up, .st.hashing, .st.ready { background: #2a2140; color: #c3b0ff; }
-  .upnote { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 8px 12px; font-size: 13px; margin-top: 10px; }
-</style>
+<meta name="theme-color" id="themeMeta" content="#0a0b0f" />
+<link rel="stylesheet" href="/style.css" />
+<!-- pre-paint: apply stored/system theme before first render (no light/dark flash) -->
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem('illustro_theme')
+    || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+</script>
 </head>
 <body>
-<header>
-  <div class="row">
-    <span class="logo">illustro</span>
-    <input id="q" placeholder="Search: blue_hair school_uniform ... (space-separated)" />
-    <button class="primary" onclick="doSearch()">Search</button>
-    <button onclick="openStats()">Stats</button>
-    <button onclick="toggleMonitor()">Monitor</button>
-    <button onclick="openUpload()">Upload</button>
-    <span id="worker" class="worker"></span>
+
+<header id="hdr">
+  <div class="bar">
+    <a class="logo" href="#/">illustro</a>
+    <div class="search" id="searchWrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round">
+        <circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>
+      </svg>
+      <input id="q" placeholder="Search tags or Chinese — / to focus" autocomplete="off"
+             spellcheck="false" enterkeyhint="search" />
+      <span class="kbd-hint" aria-hidden="true">/</span>
+      <button id="qClear" hidden aria-label="Clear search">✕</button>
+      <div id="acBox" class="acbox" hidden role="listbox"></div>
+    </div>
+    <div class="hbtns">
+      <button id="themeBtn" class="iconbtn" title="Toggle light/dark theme" aria-label="Toggle theme"></button>
+      <button id="btnStats" class="hbtn">Analytics</button>
+      <button id="btnUpload" class="hbtn primary">Upload</button>
+      <button id="workerPill" class="wpill" title="Background worker — open Activity tab" hidden></button>
+    </div>
   </div>
-  <div class="row chips" id="ratingChips">
-    <span class="chip" data-r="general">general</span>
-    <span class="chip" data-r="sensitive">sensitive</span>
-    <span class="chip" data-r="questionable">questionable</span>
-    <span class="chip" data-r="explicit">explicit</span>
-    <span style="flex:1"></span>
-    <span class="chip" id="excHint" title="Click a tag in results to filter; Shift+click to exclude">Tag filtering</span>
+  <div class="filterbar" id="filterBar">
+    <div class="seg" id="ratingSeg" role="group" aria-label="Rating filter">
+      <button class="rpill" data-r="general">general</button>
+      <button class="rpill" data-r="sensitive">sensitive</button>
+      <button class="rpill" data-r="questionable">questionable</button>
+      <button class="rpill" data-r="explicit">explicit</button>
+    </div>
+    <select id="sortSel" title="Sort (browse mode)">
+      <option value="new">Newest first</option>
+      <option value="old">Oldest first</option>
+      <option value="random">Shuffle</option>
+    </select>
+    <div class="tagchips" id="activeTags"></div>
   </div>
-  <div class="row chips" id="activeTags"></div>
 </header>
 
-<div class="meta" id="meta"></div>
-<div id="grid"></div>
-<button class="more" id="moreBtn" style="display:none" onclick="loadMore()">Load more</button>
+<main id="main">
+  <div id="banner" class="banner" hidden></div>
+  <div id="meta" class="meta"></div>
+  <div id="grid" class="grid" aria-live="polite"></div>
+  <div id="loader" hidden><div class="spinner"></div></div>
+  <div id="sentinel"></div>
+  <div id="endmark" hidden></div>
+</main>
 
-<div class="modal" id="modal">
-  <span class="close" onclick="closeModal()">✕</span>
-  <div class="imgwrap"><img id="mimg" src="" /></div>
-  <div class="side" id="mside"></div>
+<!-- Image viewer -->
+<div id="viewer" class="viewer" hidden role="dialog" aria-modal="true" aria-label="Image viewer">
+  <div class="vimg-wrap" id="vWrap">
+    <img id="vImg" alt="" />
+    <div class="vload" id="vLoad" hidden><div class="spinner"></div></div>
+    <button class="vnav prev" id="vPrev" aria-label="Previous image">‹</button>
+    <button class="vnav next" id="vNext" aria-label="Next image">›</button>
+    <button class="vclose" id="vClose" aria-label="Close viewer">✕</button>
+    <div class="vpos" id="vPos" hidden></div>
+  </div>
+  <aside class="vside" id="vSide"></aside>
 </div>
 
-<div id="stats"><span class="close" onclick="closeStats()">✕</span><div class="scard" id="statsBody"></div></div>
-
-<div id="monitor">
-  <div class="msection">
-    <h2>Worker Progress</h2>
-    <div class="mkpi-row" id="workerKpis"></div>
-    <div id="workerControls" style="margin-bottom:14px"></div>
-    <div id="workerError"></div>
-    <div class="chart-wrap"><canvas id="roundChart"></canvas></div>
+<!-- Analytics (collection / activity / duplicates) -->
+<div id="stats" class="sheet" hidden role="dialog" aria-modal="true" aria-label="Analytics">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <nav class="tabs" id="statsTabs">
+        <button class="tab on" data-tab="collection">Collection</button>
+        <button class="tab" data-tab="activity">Activity</button>
+        <button class="tab" data-tab="dupes">Duplicates</button>
+      </nav>
+      <button class="vclose" id="statsClose" aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <section id="tabCollection"></section>
+      <section id="tabActivity" hidden>
+        <div class="msection">
+          <h3>Worker progress</h3>
+          <div class="kpis" id="workerKpis"></div>
+          <div class="wctrl" id="workerControls"></div>
+          <div id="workerError"></div>
+          <div class="chart-wrap"><canvas id="roundChart"></canvas></div>
+        </div>
+        <div class="msection">
+          <h3>Search performance</h3>
+          <div class="bench-box" id="benchBox">Running startup benchmark…</div>
+          <div class="chart-wrap"><canvas id="latencyChart"></canvas></div>
+          <div class="latency-stats" id="latencyStats"></div>
+        </div>
+      </section>
+      <section id="tabDupes" hidden></section>
+    </div>
   </div>
-  <div class="msection">
-    <h2>Search Performance</h2>
-    <div class="bench-box" id="benchBox">Running startup benchmark...</div>
-    <div class="chart-wrap" style="margin-top:14px"><canvas id="latencyChart"></canvas></div>
-    <div class="latency-stats" id="latencyStats"></div>
+</div>
+
+<!-- Upload / mobile sync -->
+<div id="upload" class="sheet" hidden role="dialog" aria-modal="true" aria-label="Upload from device">
+  <div class="sheet-card ucard">
+    <div class="sheet-head">
+      <h2>Upload from device</h2>
+      <button class="vclose" id="uploadClose" aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div id="upDisabled" class="err-box" hidden></div>
+      <div id="upNote" class="upnote" hidden></div>
+      <div class="row">
+        <button id="upPickFolder">Pick folder</button>
+        <button id="upResumeBtn" hidden>↻ Continue last folder</button>
+        <button id="upPickFiles">Pick images</button>
+        <span style="flex:1"></span>
+        <input id="upToken" type="password" placeholder="API token (if set)" aria-label="API token" />
+      </div>
+      <input type="file" id="upFolder" webkitdirectory multiple hidden />
+      <input type="file" id="upFiles" accept="image/*" multiple hidden />
+      <div class="ukpis" id="upSummary">No files picked yet — pick a folder to start a bulk backfill.</div>
+      <div class="upbar"><div id="upBar"></div></div>
+      <div class="row">
+        <button class="primary" id="upStartBtn">Upload</button>
+        <button id="upPauseBtn" hidden>Pause</button>
+        <button id="upRetryBtn" hidden>Retry failed</button>
+        <button id="upClearBtn">Clear finished</button>
+      </div>
+      <p class="uhint">
+        Only files directly inside the picked folder are uploaded (subfolders are skipped). Keep this page open while
+        uploading — interrupted? Re-pick the same folder: everything already uploaded is skipped instantly. Start
+        tagging from Analytics → Activity when you're ready.
+      </p>
+      <div id="upList"></div>
+    </div>
   </div>
 </div>
 
-<div id="upload">
-  <span class="close" onclick="closeUpload()">✕</span>
-  <div class="ucard">
-    <h2 style="margin-top:0">Upload from device</h2>
-    <div id="upDisabled" class="err-box" style="display:none"></div>
-    <div id="upNote" class="upnote" style="display:none"></div>
-    <div class="row">
-      <button onclick="pickFolder()">📂 Pick folder</button>
-      <button id="upResumeBtn" onclick="resumeFolder()" style="display:none">↻ Continue last folder</button>
-      <button onclick="document.getElementById('upFiles').click()">🖼 Pick images</button>
-      <span style="flex:1"></span>
-      <input id="upToken" type="password" placeholder="API token (if set)" oninput="saveToken(this.value)">
-    </div>
-    <input type="file" id="upFolder" webkitdirectory multiple hidden>
-    <input type="file" id="upFiles" accept="image/*" multiple hidden>
-    <div class="ukpis" id="upSummary">No files picked yet — pick a folder to start a bulk backfill.</div>
-    <div class="upbar"><div id="upBar"></div></div>
-    <div class="row">
-      <button class="primary" id="upStartBtn" onclick="startUpload()">Upload</button>
-      <button id="upPauseBtn" onclick="pauseUpload()" style="display:none">Pause</button>
-      <button id="upRetryBtn" onclick="retryFailed()" style="display:none">Retry failed</button>
-      <button onclick="clearDone()">Clear finished</button>
-    </div>
-    <div style="color:var(--muted);font-size:12px;margin-top:8px">
-      Only files directly inside the picked folder are uploaded (subfolders are skipped). Keep this page open while
-      uploading — interrupted? Re-pick the same folder: everything already uploaded is skipped instantly. Start
-      tagging from the header's worker controls when you're ready.
-    </div>
-    <div id="upList"></div>
-  </div>
-</div>
+<div id="toasts" aria-live="assertive"></div>
 
 <script src="/sha256.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script>
-const state = { include: [], exclude: [], rating: [], page: 1, total: 0, q: "" };
-
-function ratingChipSetup() {
-  document.querySelectorAll('#ratingChips .chip[data-r]').forEach(c => {
-    c.onclick = () => {
-      const r = c.dataset.r;
-      if (state.rating.includes(r)) { state.rating = state.rating.filter(x => x !== r); c.classList.remove('on'); }
-      else { state.rating.push(r); c.classList.add('on'); }
-      doSearch();
-    };
-  });
-}
-ratingChipSetup();
-document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-
-function renderActiveTags() {
-  const box = document.getElementById('activeTags'); box.innerHTML = '';
-  state.include.forEach(t => box.appendChild(mkChip(t, 'on', () => { state.include = state.include.filter(x=>x!==t); doSearch(); })));
-  state.exclude.forEach(t => box.appendChild(mkChip('−'+t, 'exc', () => { state.exclude = state.exclude.filter(x=>x!==t); doSearch(); })));
-}
-function mkChip(label, cls, onclick) {
-  const s = document.createElement('span'); s.className = 'chip ' + cls; s.textContent = label + ' ✕'; s.onclick = onclick; return s;
-}
-
-function addTag(name, exclude) {
-  if (exclude) { if (!state.exclude.includes(name)) state.exclude.push(name); }
-  else { if (!state.include.includes(name)) state.include.push(name); }
-  doSearch();
-}
-
-async function doSearch() {
-  state.q = document.getElementById('q').value.trim();
-  state.page = 1;
-  renderActiveTags();
-  const data = await fetchPage();
-  document.getElementById('grid').innerHTML = '';
-  renderResults(data, true);
-}
-
-async function loadMore() { state.page++; const data = await fetchPage(); renderResults(data, false); }
-
-async function fetchPage() {
-  const p = new URLSearchParams({ q: state.q, include: state.include.join(','),
-    exclude: state.exclude.join(','), rating: state.rating.join(','), page: state.page });
-  const r = await fetch('/api/search?' + p.toString());
-  return r.json();
-}
-
-function renderResults(data, fresh) {
-  state.total = data.total;
-  const m = [];
-  if (data.matched_tags.length) m.push('Matched tags: ' + data.matched_tags.join(', '));
-  m.push(`${data.total} images` + (data.mode === 'any' ? ' (any match)' : ''));
-  if (data.residual && data.residual.length) m.push('Unrecognized: ' + data.residual.join(', '));
-  document.getElementById('meta').textContent = m.join('　·　');
-  const grid = document.getElementById('grid');
-  data.images.forEach(img => grid.appendChild(card(img)));
-  const shown = state.page * data.page_size;
-  document.getElementById('moreBtn').style.display = shown < data.total ? 'block' : 'none';
-}
-
-function card(img) {
-  const d = document.createElement('div'); d.className = 'card';
-  const im = document.createElement('img'); im.loading = 'lazy'; im.src = '/api/thumb/' + img.id;
-  if (img.width && img.height) im.style.aspectRatio = img.width + '/' + img.height;
-  d.appendChild(im);
-  if (img.rating && img.rating !== 'general') { const rt = document.createElement('span'); rt.className='rt'; rt.textContent = img.rating[0].toUpperCase(); d.appendChild(rt); }
-  d.onclick = () => openModal(img);
-  return d;
-}
-
-function openModal(img) {
-  document.getElementById('mimg').src = '/api/image/' + img.id;
-  const side = document.getElementById('mside');
-  const tagsHtml = (img.tags || []).map(t => {
-    const label = t.zh ? t.zh : t.name;
-    return `<span class="tag ${t.cat===4?'char':''}" data-n="${t.name}">${label}<span class="c">${t.conf}</span></span>`;
-  }).join('');
-  side.innerHTML = `
-    <h3>Rating</h3><div>${img.rating || '-'}  ${img.width}x${img.height}  <span class="swatch" style="background:${img.avg_color}"></span> ${img.avg_color||''}</div>
-    <div style="margin:12px 0"><button class="primary" onclick="findSimilar(${img.id})">Find similar</button>
-    <button onclick="window.open('/api/image/${img.id}')">Original</button></div>
-    <h3>Tags (click = filter, Shift+click = exclude)</h3><div id="mtags">${tagsHtml}</div>`;
-  side.querySelectorAll('.tag').forEach(el => el.onclick = (e) => { addTag(el.dataset.n, e.shiftKey); closeModal(); });
-  document.getElementById('modal').classList.add('open');
-}
-function closeModal() { document.getElementById('modal').classList.remove('open'); }
-document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
-
-async function findSimilar(id) {
-  closeModal();
-  const r = await fetch('/api/similar?id=' + id + '&k=40'); const data = await r.json();
-  document.getElementById('meta').textContent = `${data.images.length} images similar to #${id} (vector nearest neighbor)`;
-  const grid = document.getElementById('grid'); grid.innerHTML = '';
-  data.images.forEach(img => grid.appendChild(card(img)));
-  document.getElementById('moreBtn').style.display = 'none';
-  window.scrollTo(0, 0);
-}
-
-async function openStats() {
-  document.getElementById('stats').classList.add('open');
-  const s = await (await fetch('/api/stats')).json();
-  const bars = (arr, key, max) => arr.map(x => {
-    const label = x.zh || x.name || x.color;
-    return `<div class="brow"><span>${label}</span><span class="bar" style="width:${Math.max(4, 100*x.count/max)}%"></span><span>${x.count}</span></div>`;
-  }).join('');
-  const gmax = Math.max(1, ...s.top_general.map(x=>x.count));
-  const cmax = Math.max(1, ...(s.top_characters.length?s.top_characters:[{count:1}]).map(x=>x.count));
-  const pmax = Math.max(1, ...s.palette.map(x=>x.count));
-  document.getElementById('statsBody').innerHTML = `
-    <h2 style="margin-top:0">Collection Analytics</h2>
-    <div class="kpis">
-      <div class="kpi"><b>${s.total}</b>Total</div>
-      <div class="kpi"><b>${s.tagged}</b>Tagged</div>
-      <div class="kpi"><b>${s.embedded}</b>Embedded</div>
-      <div class="kpi"><b>${s.duplicates.images}</b>Duplicates (${s.duplicates.groups} groups)</div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
-      <div><h3>Top 40 Tags</h3>${bars(s.top_general, 'general', gmax)}</div>
-      <div>
-        <h3>Top 30 Characters</h3>${s.top_characters.length?bars(s.top_characters,'char',cmax):'<p style="color:var(--muted)">No character tags yet</p>'}
-        <h3 style="margin-top:18px">Dominant Colors</h3>${bars(s.palette,'color',pmax)}
-        <h3 style="margin-top:18px">Orientation</h3>
-        <div class="brow"><span>Portrait</span><span class="bar" style="width:${100*s.orientation.portrait/Math.max(1,s.total)}%"></span><span>${s.orientation.portrait}</span></div>
-        <div class="brow"><span>Landscape</span><span class="bar" style="width:${100*s.orientation.landscape/Math.max(1,s.total)}%"></span><span>${s.orientation.landscape}</span></div>
-        <div class="brow"><span>Square</span><span class="bar" style="width:${100*s.orientation.square/Math.max(1,s.total)}%"></span><span>${s.orientation.square}</span></div>
-      </div>
-    </div>`;
-}
-function closeStats() { document.getElementById('stats').classList.remove('open'); }
-
-// -- Background worker status bar --
-async function pollWorker() {
-  try { renderWorker(await (await fetch('/api/worker')).json()); } catch (e) {}
-}
-function renderWorker(w) {
-  const el = document.getElementById('worker');
-  if (!w.enabled) { el.innerHTML = `<span class="wdot stop"></span>Indexed ${w.tagged}/${w.total}`; return; }
-  const label = {running:'Processing', sleeping:'Idle', paused:'Paused', idle:'Idle', stopped:'Stopped'}[w.state] || w.state;
-  const cls = {running:'run', sleeping:'sleep', paused:'pause', stopped:'stop'}[w.state] || '';
-  const phZh = {tagging:'Tagging', scanning:'Scanning', indexing:'Indexing'}[w.phase] || '';
-  let prog = (w.state === 'running' && w.progress_total) ? ` ${phZh} ${w.processed}/${w.progress_total}` : '';
-  let btns = (w.state === 'paused')
-    ? `<button onclick="workerAction('resume')">Resume</button>`
-    : `<button onclick="workerAction('pause')">Pause</button>`;
-  btns += `<button onclick="workerAction('run')">Process now</button>`;
-  const err = w.last_error ? ` <span title="${w.last_error}">Warning</span>` : '';
-  el.innerHTML = `<span class="wdot ${cls}"></span>${label}${prog} - Pending ${w.remaining}${err} ${btns}`;
-}
-async function workerAction(a) { await fetch('/api/worker/' + a, {method: 'POST'}); pollWorker(); }
-setInterval(pollWorker, 3000); pollWorker();
-
-// ---- Monitor dashboard ----
-let monitorOpen = false;
-let monitorTimer = null;
-let roundChart = null, latencyChart = null;
-
-function toggleMonitor() {
-  monitorOpen = !monitorOpen;
-  const mon = document.getElementById('monitor');
-  const grid = document.getElementById('grid');
-  const meta = document.getElementById('meta');
-  const moreBtn = document.getElementById('moreBtn');
-  if (monitorOpen) {
-    mon.classList.add('open');
-    grid.style.display = 'none'; meta.style.display = 'none'; moreBtn.style.display = 'none';
-    pollMonitor();
-    monitorTimer = setInterval(pollMonitor, 3000);
-  } else {
-    mon.classList.remove('open');
-    grid.style.display = ''; meta.style.display = '';
-    if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
-    doSearch();
-  }
-}
-
-function fmtDur(sec) {
-  if (!sec || sec <= 0) return '-';
-  if (sec < 60) return sec.toFixed(1) + 's';
-  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
-  return m + 'm ' + s + 's';
-}
-
-async function pollMonitor() {
-  try {
-    const r = await fetch('/api/monitor');
-    const d = await r.json();
-    renderWorkerKpis(d);
-    renderBenchmark(d.benchmark);
-    renderLatencyChart(d.query_latency);
-    renderLatencyStats(d.query_latency.stats);
-    renderRoundChart(d.worker);
-  } catch (e) {}
-}
-
-function renderWorkerKpis(d) {
-  const w = d.worker;
-  const el = document.getElementById('workerKpis');
-  const ctrl = document.getElementById('workerControls');
-  if (!w) {
-    el.innerHTML = `<div class="mkpi"><b>—</b><span>Worker disabled (serve-only mode)</span></div>
-      <div class="mkpi"><b>${d.db_tagged}/${d.db_total}</b><span>Tagged/Total</span></div>`;
-    ctrl.innerHTML = '<span style="color:var(--muted);font-size:13px">No worker controls (serve-only mode). Use <code>serve-all</code> to enable background processing.</span>';
-    document.getElementById('workerError').innerHTML = '';
-    return;
-  }
-  const stateLabel = {running:'Processing', sleeping:'Idle', paused:'Paused', idle:'Idle', stopped:'Stopped'}[w.state] || w.state;
-  const phaseLabel = {tagging:'Tagging', scanning:'Scanning', indexing:'Indexing', applying_zh:'Applying ZH', running:'Running'}[w.phase] || w.phase;
-  el.innerHTML = `
-    <div class="mkpi"><b>${stateLabel}</b><span>State · ${phaseLabel}</span></div>
-    <div class="mkpi"><b>${w.processed}/${w.progress_total}</b><span>Processed this round</span></div>
-    <div class="mkpi"><b>${w.throughput_img_min}</b><span>img/min</span></div>
-    <div class="mkpi"><b>${fmtDur(w.eta_sec)}</b><span>ETA</span></div>
-    <div class="mkpi"><b>${fmtDur(w.elapsed_sec)}</b><span>Elapsed</span></div>
-    <div class="mkpi"><b>${d.db_tagged}/${d.db_total}</b><span>Tagged/Total in DB</span></div>`;
-  const errEl = document.getElementById('workerError');
-  errEl.innerHTML = w.last_error ? `<div class="err-box">Last error: ${w.last_error}</div>` : '';
-  // Worker control buttons
-  let btns = '';
-  if (w.state === 'paused') {
-    btns = `<button class="primary" onclick="monitorWorkerAction('resume')">Resume</button>`;
-  } else {
-    btns = `<button onclick="monitorWorkerAction('pause')">Pause</button>`;
-  }
-  btns += ` <button onclick="monitorWorkerAction('run')">Process now</button>`;
-  ctrl.innerHTML = btns;
-}
-
-async function monitorWorkerAction(a) {
-  await fetch('/api/worker/' + a, {method: 'POST'});
-  pollMonitor();
-  pollWorker();
-}
-
-function renderBenchmark(b) {
-  const el = document.getElementById('benchBox');
-  if (!b) { el.textContent = 'Benchmark unavailable (failed at startup).'; return; }
-  el.innerHTML = `Startup cosine benchmark: <b>${b.n}×${b.dim}</b> vectors, top-${b.k}, ${b.iterations} iterations &mdash;
-    mean <b>${b.mean_ms.toFixed(2)}ms</b>, p50 <b>${b.p50_ms.toFixed(2)}ms</b>, p95 <b>${b.p95_ms.toFixed(2)}ms</b>`;
-}
-
-function renderRoundChart(w) {
-  if (!w || !w.rounds || w.rounds.length === 0) return;
-  const rounds = w.rounds;
-  const labels = rounds.map((_, i) => '#' + (i + 1));
-  const processed = rounds.map(r => r.processed);
-  const durations = rounds.map(r => r.duration_sec);
-  const cfg = {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { type: 'bar', label: 'Images processed', data: processed, backgroundColor: 'rgba(138,124,255,0.7)', yAxisID: 'y' },
-        { type: 'line', label: 'Duration (s)', data: durations, borderColor: '#ff7cc3', backgroundColor: 'rgba(255,124,195,0.2)', yAxisID: 'y1', tension: 0.3 },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: {
-        y: { type: 'linear', position: 'left', title: { display: true, text: 'Images', color: '#9aa0ad' }, ticks: { color: '#9aa0ad' }, grid: { color: '#2d313d' } },
-        y1: { type: 'linear', position: 'right', title: { display: true, text: 'Seconds', color: '#9aa0ad' }, ticks: { color: '#9aa0ad' }, grid: { drawOnChartArea: false } },
-        x: { ticks: { color: '#9aa0ad' }, grid: { color: '#2d313d' } },
-      },
-      plugins: { legend: { labels: { color: '#e8e9ee' } } },
-    },
-  };
-  if (roundChart) { roundChart.data = cfg.data; roundChart.update('none'); }
-  else { roundChart = new Chart(document.getElementById('roundChart'), cfg); }
-}
-
-function renderLatencyChart(ql) {
-  const recent = ql.recent || [];
-  if (recent.length === 0) return;
-  const labels = recent.map(s => new Date(s.ts * 1000).toLocaleTimeString());
-  const searchData = recent.map(s => s.endpoint === 'search' ? s.latency_ms : null);
-  const similarData = recent.map(s => s.endpoint === 'similar' ? s.latency_ms : null);
-  const cfg = {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Search (ms)', data: searchData, borderColor: '#8a7cff', backgroundColor: 'rgba(138,124,255,0.15)', tension: 0.3, pointRadius: 2, spanGaps: true },
-        { label: 'Similar (ms)', data: similarData, borderColor: '#ff7cc3', backgroundColor: 'rgba(255,124,195,0.15)', tension: 0.3, pointRadius: 2, spanGaps: true },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: {
-        y: { title: { display: true, text: 'Latency (ms)', color: '#9aa0ad' }, ticks: { color: '#9aa0ad' }, grid: { color: '#2d313d' } },
-        x: { ticks: { color: '#9aa0ad', maxTicksLimit: 10 }, grid: { color: '#2d313d' } },
-      },
-      plugins: { legend: { labels: { color: '#e8e9ee' } } },
-    },
-  };
-  if (latencyChart) { latencyChart.data = cfg.data; latencyChart.update('none'); }
-  else { latencyChart = new Chart(document.getElementById('latencyChart'), cfg); }
-}
-
-function renderLatencyStats(stats) {
-  const el = document.getElementById('latencyStats');
-  const mkTbl = (name, s) => `
-    <div><h3 style="margin:0 0 6px;font-size:13px;color:var(--muted)">${name}</h3>
-    <table class="lat-stats-tbl">
-      <tr><th>count</th><th>mean</th><th>p50</th><th>p95</th><th>min</th><th>max</th></tr>
-      <tr><td>${s.count}</td><td>${s.mean_ms}ms</td><td>${s.p50_ms}ms</td><td>${s.p95_ms}ms</td><td>${s.min_ms}ms</td><td>${s.max_ms}ms</td></tr>
-    </table></div>`;
-  el.innerHTML = mkTbl('Search', stats.search) + mkTbl('Similar', stats.similar);
-}
-
-// ---- Upload / mobile sync (one-way: this device -> server) ----
-// Design notes:
-// - One file per request; server streams to disk and re-verifies sha256.
-// - Dedup at three levels: (1) per-file metadata cache (name|size|mtime -> hash) for instant
-//   re-picks, (2) localStorage ledger of uploaded hashes, (3) batch /api/sync/check against
-//   the server before uploading. An interrupted run never re-uploads a finished file.
-// - Folder picking prefers the File System Access API (showDirectoryPicker): entries are
-//   enumerated lazily (names only) with visible progress, and the handle is persisted so
-//   resuming an interrupted backfill is one tap. <input webkitdirectory> is the fallback —
-//   on Android it must stat every file via SAF before the change event fires, which can
-//   look frozen for minutes on huge folders.
-// - crypto.subtle is only available on secure contexts (https / localhost); plain-HTTP LAN
-//   falls back to the pure-JS streaming Sha256 from sha256.js.
-const UP = {
-  queue: [], running: false, stopReq: false, sessionStored: 0,
-  info: null, wakeLock: null, ledger: new Set(), meta: {}, renderT: null,
-  seenMk: new Set(), lastDir: null, resumeChecked: false,
-};
-const UP_STATUSES = ['pending', 'hashing', 'ready', 'uploading', 'done', 'dup', 'skip', 'error'];
-const UP_LABEL = { pending: 'queued', hashing: 'hashing', ready: 'new', uploading: 'uploading',
-  done: 'uploaded', dup: 'on server', skip: 'uploaded', error: 'failed' };
-
-function upLS(key, val) {
-  try {
-    if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null');
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch (e) { return null; }
-}
-function upLoadPersisted() {
-  (upLS('illustro_up_hashes') || []).forEach(h => UP.ledger.add(h));
-  UP.meta = upLS('illustro_up_meta') || {};
-}
-function upPersist() {
-  let arr = [...UP.ledger];
-  if (arr.length > 30000) arr = arr.slice(-20000);
-  upLS('illustro_up_hashes', arr);
-  const keys = Object.keys(UP.meta);
-  if (keys.length > 30000) {
-    const keep = {}; keys.slice(-20000).forEach(k => keep[k] = UP.meta[k]);
-    UP.meta = keep;
-  }
-  upLS('illustro_up_meta', UP.meta);
-}
-function upMetaKey(f) { return f.name + '|' + f.size + '|' + f.lastModified; }
-
-// Tiny IndexedDB kv so the service worker (share target) can read the token.
-function upIdb() {
-  return new Promise(res => {
-    const o = indexedDB.open('illustro', 1);
-    o.onupgradeneeded = () => o.result.createObjectStore('kv');
-    o.onsuccess = () => res(o.result);
-    o.onerror = () => res(null);
-  });
-}
-async function idbSet(k, v) {
-  const db = await upIdb(); if (!db) return;
-  db.transaction('kv', 'readwrite').objectStore('kv').put(v, k);
-}
-async function idbGet(k) {
-  const db = await upIdb(); if (!db) return null;
-  return new Promise(res => {
-    try {
-      const t = db.transaction('kv').objectStore('kv').get(k);
-      t.onsuccess = () => res(t.result ?? null);
-      t.onerror = () => res(null);
-    } catch (e) { res(null); }
-  });
-}
-function saveToken(v) {
-  localStorage.setItem('illustro_up_token', v);
-  idbSet('token', v);
-}
-function upHeaders(tok, json) {
-  const h = {}; if (tok) h['X-API-Token'] = tok;
-  if (json) h['Content-Type'] = 'application/json';
-  return h;
-}
-
-async function openUpload() {
-  document.getElementById('upload').classList.add('open');
-  document.getElementById('upToken').value = localStorage.getItem('illustro_up_token') || '';
-  if (!UP.info) { try { UP.info = await (await fetch('/api/sync/info')).json(); } catch (e) { UP.info = null; } }
-  const dis = document.getElementById('upDisabled');
-  if (!UP.info || !UP.info.enabled) {
-    dis.style.display = 'block';
-    dis.textContent = 'Sync is disabled on the server. Set sync.enabled=true in config.yaml.';
-  } else dis.style.display = 'none';
-  if (!UP.resumeChecked) {
-    UP.resumeChecked = true;
-    try {
-      const h = await idbGet('lastDirHandle');
-      if (h) {
-        UP.lastDir = h;
-        const b = document.getElementById('upResumeBtn');
-        b.style.display = '';
-        b.textContent = '↻ Continue "' + h.name + '"';
-      }
-    } catch (e) {}
-  }
-  renderUp();
-}
-function closeUpload() { document.getElementById('upload').classList.remove('open'); }
-function upNote(msg) { const el = document.getElementById('upNote'); el.textContent = msg; el.style.display = 'block'; }
-
-document.getElementById('upFolder').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
-document.getElementById('upFiles').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
-
-function upScanNote(msg) {
-  document.getElementById('upSummary').innerHTML = `<span>${msg}</span>`;
-}
-const upYield = () => new Promise(r => setTimeout(r, 0));
-
-async function pickFolder() {
-  if (window.showDirectoryPicker) {
-    try {
-      const dir = await window.showDirectoryPicker({ id: 'illustro-uploads', mode: 'read' });
-      try { await idbSet('lastDirHandle', dir); } catch (e) {}
-      UP.lastDir = dir;
-      const b = document.getElementById('upResumeBtn');
-      b.style.display = ''; b.textContent = '↻ Continue "' + dir.name + '"';
-      await enqueueFromDir(dir);
-      return;
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;   // user cancelled the picker
-      console.warn('showDirectoryPicker failed, using input fallback', e);
-    }
-  }
-  document.getElementById('upFolder').click();   // fallback: webkitdirectory input
-}
-
-async function resumeFolder() {
-  const h = UP.lastDir;
-  if (!h) { upNote('No stored folder — pick one.'); return; }
-  let perm = 'granted';
-  try {
-    if (h.queryPermission && (await h.queryPermission({ mode: 'read' })) !== 'granted') {
-      perm = await h.requestPermission({ mode: 'read' });   // button click = user gesture
-    }
-  } catch (e) { perm = 'denied'; }
-  if (perm !== 'granted') { upNote('Folder permission was not granted — pick the folder again.'); return; }
-  await enqueueFromDir(h);
-}
-
-async function enqueueFromDir(dir) {
-  const exts = new Set((UP.info && UP.info.extensions) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']);
-  const items = [];
-  let scanned = 0;
-  upScanNote('Scanning folder…');
-  // Non-recursive: only files directly inside the picked folder (subfolders are skipped).
-  const walk = async (d) => {
-    let iter;
-    try { iter = d.values(); } catch (e) { return; }
-    for (;;) {
-      let res;
-      try { res = await iter.next(); } catch (e) { return; }
-      if (res.done) break;
-      const h = res.value;
-      scanned++;
-      if (h.kind === 'file') {
-        const dot = h.name.lastIndexOf('.');
-        if (dot > 0 && exts.has(h.name.slice(dot).toLowerCase())) {
-          // Lazy: store the handle only — name/size/mtime are fetched at processing time.
-          items.push({ f: null, handle: h, name: h.name, size: null, mk: null,
-            hash: null, status: 'pending', tries: 0, prog: 0, err: '' });
-        }
-      }
-      if (scanned % 200 === 0) {
-        upScanNote(`Scanning folder… ${scanned} entries, ${items.length} images`);
-        await upYield();
-      }
-    }
-  };
-  await walk(dir);
-  for (const it of items) UP.queue.push(it);
-  if (scanned) upNote(`Folder scanned: ${items.length} image(s) queued from ${scanned} entries.`);
-  renderUp();
-}
-
-async function addFiles(files) {
-  const exts = new Set((UP.info && UP.info.extensions) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif']);
-  let known = 0;
-  const total = files.length;
-  for (let idx = 0; idx < total; idx++) {
-    const f = files[idx];
-    const rel = f.webkitRelativePath || '';
-    if (rel && rel.split('/').length > 2) continue;   // folder-pick fallback: skip subfolders
-    const dot = f.name.lastIndexOf('.');
-    if (dot < 0 || !exts.has(f.name.slice(dot).toLowerCase())) continue;
-    const mk = upMetaKey(f);
-    const rec = UP.meta[mk];
-    if (rec && rec.done) { known++; continue; }              // same file seen before: skip without hashing
-    if (UP.seenMk.has(mk)) continue;                         // already queued this session
-    UP.seenMk.add(mk);
-    UP.queue.push({ f, handle: null, name: f.name, size: f.size, mk,
-      hash: rec ? rec.h : null, status: 'pending', tries: 0, prog: 0, err: '' });
-    // Yield + progress every 200 files so the page stays responsive on huge picks
-    if (idx % 200 === 199) {
-      upScanNote(`Reading files… ${idx + 1}/${total}` + (known ? ` · ${known} already uploaded` : ''));
-      await upYield();
-    }
-  }
-  if (known) upNote(`${known} file(s) already uploaded before — skipped instantly.`);
-  renderUp();
-}
-
-async function hashFile(f) {
-  if (window.isSecureContext && window.crypto && crypto.subtle) {
-    const d = await crypto.subtle.digest('SHA-256', await f.arrayBuffer());
-    return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-  const h = new Sha256();
-  const CH = 4 << 20;
-  for (let off = 0; off < f.size; off += CH) h.update(new Uint8Array(await f.slice(off, off + CH).arrayBuffer()));
-  return h.hex();
-}
-
-function scheduleRender() {
-  if (UP.renderT) return;
-  UP.renderT = setTimeout(() => { UP.renderT = null; renderUp(); }, 250);
-}
-
-function fmtMB(b) { return !b ? '—' : b >= (1 << 30) ? (b / (1 << 30)).toFixed(2) + ' GB' : (b / (1 << 20)).toFixed(1) + ' MB'; }
-function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-function renderUp() {
-  const n = {}; UP_STATUSES.forEach(s => n[s] = 0);
-  let bytesTotal = 0, bytesDone = 0, inflight = 0;
-  for (const it of UP.queue) {
-    n[it.status]++;
-    if (it.status === 'skip') continue;
-    bytesTotal += it.size || 0;
-    if (it.status === 'done' || it.status === 'dup') bytesDone += it.size || 0;
-    if (it.status === 'uploading') inflight += it.prog * (it.size || 0);
-  }
-  const active = n.pending + n.hashing + n.ready + n.uploading;
-  const el = document.getElementById('upSummary');
-  if (!UP.queue.length) { el.textContent = 'No files picked yet — pick a folder to start a bulk backfill.'; }
-  else el.innerHTML = `<span>Picked <b>${UP.queue.length}</b></span>` +
-    (n.done ? `<span>uploaded <b>${n.done}</b></span>` : '') +
-    (n.dup + n.skip ? `<span>already on server <b>${n.dup + n.skip}</b></span>` : '') +
-    (n.error ? `<span style="color:#ffb0b0">failed <b>${n.error}</b></span>` : '') +
-    (active ? `<span>to go <b>${active}</b></span>` : '') +
-    (bytesTotal ? `<span>${fmtMB(bytesDone + inflight)} / ${fmtMB(bytesTotal)}</span>` : '');
-  const pct = bytesTotal ? Math.min(100, Math.round(100 * (bytesDone + inflight) / bytesTotal)) : 0;
-  document.getElementById('upBar').style.width = pct + '%';
-
-  const list = document.getElementById('upList');
-  const rows = UP.queue.filter(i => i.status !== 'skip').slice(-60);
-  list.innerHTML = rows.map(i => {
-    const st = i.status === 'uploading' ? `uploading ${Math.round(i.prog * 100)}%`
-      : (i.status === 'error' && i.err) ? `${UP_LABEL[i.status]}: ${i.err}` : UP_LABEL[i.status];
-    return `<div class="ufile"><span class="nm" title="${esc(i.name)}">${esc(i.name)}</span>` +
-      `<span>${fmtMB(i.size)}</span><span class="st ${i.status === 'done' ? 'done' : i.status}">${esc(st)}</span></div>`;
-  }).join('');
-  if (UP.running) list.scrollTop = list.scrollHeight;
-
-  document.getElementById('upStartBtn').style.display = UP.running ? 'none' : '';
-  document.getElementById('upStartBtn').disabled = !UP.queue.some(i => i.status === 'pending' || i.status === 'ready' || i.status === 'error');
-  document.getElementById('upPauseBtn').style.display = UP.running ? '' : 'none';
-  document.getElementById('upRetryBtn').style.display = (!UP.running && n.error) ? '' : 'none';
-}
-
-function finishItem(it, status) {
-  it.status = status;
-  if (status === 'done' || status === 'dup') {
-    UP.ledger.add(it.hash);
-    UP.meta[it.mk] = { h: it.hash, done: 1 };
-    if (status === 'done') UP.sessionStored++;
-  }
-  scheduleRender();
-}
-
-function xhrUpload(it, tok) {
-  return new Promise((resolve, reject) => {
-    const fd = new FormData();
-    fd.append('file', it.f, it.name);
-    if (it.hash) fd.append('sha256', it.hash);
-    if (it.f && it.f.lastModified) fd.append('mtime_ms', String(it.f.lastModified));
-    const x = new XMLHttpRequest();
-    x.open('POST', '/api/sync/upload');
-    if (tok) x.setRequestHeader('X-API-Token', tok);
-    x.timeout = 300000;
-    x.upload.onprogress = e => { if (e.lengthComputable) { it.prog = e.loaded / e.total; scheduleRender(); } };
-    x.onload = () => resolve(x);
-    x.onerror = () => reject(new Error('network error'));
-    x.ontimeout = () => reject(new Error('timeout'));
-    x.send(fd);
-  });
-}
-
-async function uploadItem(it, tok) {
-  it.status = 'uploading'; it.prog = 0; scheduleRender();
-  for (;;) {
-    try {
-      const x = await xhrUpload(it, tok);
-      if (x.status === 401) { it.status = 'error'; it.err = 'unauthorized (check token)'; UP.stopReq = true; renderUp(); return; }
-      if (x.status === 413) { it.status = 'error'; it.err = 'too large for server limit'; renderUp(); return; }
-      if (x.status === 415) { it.status = 'error'; it.err = 'unsupported type'; renderUp(); return; }
-      if (x.status === 422) { it.status = 'error'; it.err = 'hash mismatch (retry from scratch)'; renderUp(); return; }
-      if (x.status >= 500) throw new Error('server error ' + x.status);
-      if (x.status !== 200) throw new Error('HTTP ' + x.status);
-      const j = JSON.parse(x.responseText);
-      finishItem(it, j.status === 'stored' ? 'done' : 'dup');
-      return;
-    } catch (e) {
-      it.tries++;
-      if (it.tries >= 3) { it.status = 'error'; it.err = e.message || String(e); renderUp(); return; }
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, it.tries)));
-    }
-  }
-}
-
-async function acquireWake() {
-  try { if ('wakeLock' in navigator) UP.wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
-}
-function releaseWake() { if (UP.wakeLock) { UP.wakeLock.release().catch(() => {}); UP.wakeLock = null; } }
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && UP.running) acquireWake();
-});
-
-async function startUpload() {
-  if (UP.running) return;
-  if (!UP.queue.some(i => i.status === 'pending' || i.status === 'ready')) { renderUp(); return; }
-  UP.running = true; UP.stopReq = false;
-  renderUp();
-  await acquireWake();
-  const tok = localStorage.getItem('illustro_up_token') || '';
-  try {
-    // Phase 1: hash everything pending (sequential: CPU/IO bound).
-    // Folder-picker items carry only a handle; the actual File (and its size/mtime)
-    // is fetched here — one file at a time, never the whole folder upfront.
-    for (const it of UP.queue) {
-      if (UP.stopReq) break;
-      if (it.status !== 'pending') continue;
-      if (!it.f && it.handle) {
-        try { it.f = await it.handle.getFile(); }
-        catch (e) { it.status = 'error'; it.err = 'file unavailable'; continue; }
-        it.size = it.f.size;
-        it.mk = upMetaKey(it.f);
-        UP.seenMk.add(it.mk);
-        const rec = UP.meta[it.mk];
-        if (rec && rec.done) { it.status = 'skip'; scheduleRender(); continue; }  // uploaded in a previous session
-        if (rec && rec.h) it.hash = rec.h;
-      }
-      if (!it.hash) {
-        it.status = 'hashing'; scheduleRender();
-        try { it.hash = await hashFile(it.f); }
-        catch (e) { it.status = 'error'; it.err = 'hash failed'; continue; }
-      }
-      if (UP.ledger.has(it.hash)) { finishItem(it, 'dup'); continue; }
-      it.status = 'ready'; scheduleRender();
-    }
-    renderUp();
-    // Phase 2: batch server check -> mark everything the server already has
-    const ready = UP.queue.filter(i => i.status === 'ready' && i.hash);
-    for (let i = 0; i < ready.length && !UP.stopReq; i += 500) {
-      const batch = ready.slice(i, i + 500);
-      try {
-        const r = await fetch('/api/sync/check', {
-          method: 'POST', headers: upHeaders(tok, true),
-          body: JSON.stringify({ hashes: batch.map(b => b.hash) }),
-        });
-        if (r.status === 401) { batch.forEach(b => { b.status = 'error'; b.err = 'unauthorized (check token)'; }); UP.stopReq = true; break; }
-        if (r.ok) {
-          const known = new Set((await r.json()).known || []);
-          batch.forEach(b => { if (known.has(b.hash)) finishItem(b, 'dup'); });
-        }
-      } catch (e) { /* transient: the upload phase will surface real errors */ }
-    }
-    // Phase 3: upload with N parallel workers
-    const list = UP.queue.filter(i => i.status === 'ready');
-    let idx = 0;
-    const next = () => (!UP.stopReq && idx < list.length) ? list[idx++] : null;
-    await Promise.all([0, 1, 2].map(async () => {
-      for (let it; (it = next());) await uploadItem(it, tok);
-    }));
-  } finally {
-    UP.running = false;
-    releaseWake();
-    upPersist();
-    if (UP.sessionStored > 0) {
-      upNote(`Done — ${UP.sessionStored} file(s) stored. Start processing from the worker controls in the header when you're ready.`);
-    }
-    renderUp();
-  }
-}
-
-function pauseUpload() { UP.stopReq = true; }
-function retryFailed() {
-  for (const it of UP.queue) if (it.status === 'error') { it.status = it.hash ? 'ready' : 'pending'; it.tries = 0; it.prog = 0; it.err = ''; }
-  if (!UP.running) startUpload();
-}
-function clearDone() {
-  UP.queue = UP.queue.filter(i => ['done', 'dup', 'skip', 'error'].indexOf(i.status) < 0);
-  renderUp();
-}
-upLoadPersisted();
-
-// Initial view: browse mode
-doSearch();
-
-// PWA share target: the service worker uploads shared files, then redirects here.
-const _sp = new URLSearchParams(location.search);
-if (_sp.has('shared')) {
-  openUpload();
-  upNote(`Shared: ${_sp.get('shared')} stored · ${_sp.get('dup') || 0} already on server · ${_sp.get('failed') || 0} failed`);
-  history.replaceState(null, '', '/');
-}
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-</script>
+<script src="/app.js"></script>
 </body>
 </html>

@@ -42,6 +42,8 @@ class Searcher:
         rating: Optional[list[str]] = None,
         page: int = 1,
         page_size: Optional[int] = None,
+        sort: str = "new",
+        seed: int = 0,
     ) -> SearchResult:
         page_size = page_size or self.cfg.server.page_size
         matched, residual = parse_query(query, self.zh2en, self.known_en) if query else ([], [])
@@ -64,13 +66,21 @@ class Searcher:
             exclude_params = list(exclude)
 
         if not include:
-            # No usable tags -> browse mode (sorted by import time descending)
+            # No usable tags -> browse mode (sortable; default: import time descending)
             base = f"FROM images i WHERE 1=1 {rating_clause} {exclude_clause}"
             params = rating_params + exclude_params
+            if sort == "random":
+                # Stable pseudo-random shuffle per seed (Knuth multiplicative hash on id+seed;
+                # SQLite has no XOR operator): consistent pagination within a shuffle, re-seeding reshuffles.
+                order, order_params = "((i.id + ?) * 2654435761) % 4294967296", [int(seed) % 65536]
+            elif sort == "old":
+                order, order_params = "i.added_at ASC", []
+            else:
+                order, order_params = "i.added_at DESC", []
             total = self.db.conn.execute(f"SELECT COUNT(*) c {base}", params).fetchone()["c"]
             rows = self.db.conn.execute(
-                f"SELECT i.* {base} ORDER BY i.added_at DESC LIMIT ? OFFSET ?",
-                params + [page_size, offset],
+                f"SELECT i.* {base} ORDER BY {order} LIMIT ? OFFSET ?",
+                params + order_params + [page_size, offset],
             ).fetchall()
             return SearchResult(total, matched, residual, "browse", [self._img(r) for r in rows])
 
@@ -119,6 +129,11 @@ class Searcher:
                 out.append(d)
         return out[:k]
 
+    def image_info(self, image_id: int) -> Optional[dict]:
+        """Single image payload (viewer sidebar / deep links)."""
+        row = self.db.get_image(image_id)
+        return self._img(row) if row else None
+
     # ---------- Helpers ----------
     def _img(self, row) -> dict:
         d = {
@@ -128,6 +143,8 @@ class Searcher:
             "height": row["height"],
             "rating": row["rating"],
             "avg_color": row["avg_color"],
+            "bytes": row["bytes"],
+            "added_at": row["added_at"],
         }
         tags = self.db.tags_for_image(row["id"])
         d["tags"] = [
