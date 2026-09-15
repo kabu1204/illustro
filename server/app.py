@@ -269,10 +269,28 @@ def create_app(cfg: Config, worker=None) -> FastAPI:
             if digest in db.known_hashes([digest]):
                 tmp.unlink(missing_ok=True)
                 return JSONResponse({"status": "duplicate", "sha256": digest})
-            # Collision-safe, FS-safe name: <epoch>_<8hex>_<original name>
-            stem = _UNSAFE_FILENAME.sub("_", orig.stem).strip(". ")[:60] or "upload"
-            dest = inbox / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{stem}{ext}"
-            tmp.replace(dest)
+            # Keep the original filename (sanitized). The stem is byte-capped to stay
+            # under NAME_MAX (255 bytes) after suffixing; collisions are resolved via
+            # an atomic O_EXCL reservation so a name is never overwritten, and the
+            # rename then replaces the empty placeholder atomically.
+            name = _UNSAFE_FILENAME.sub("_", orig.stem).strip(". ") or "upload"
+            while len(name.encode("utf-8")) > 180:
+                name = name[:-1]
+            dest = inbox / f"{name}{ext}"
+            n = 1
+            while True:
+                try:
+                    fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    break
+                except FileExistsError:
+                    n += 1
+                    dest = inbox / f"{name}_{n}{ext}"
+            os.close(fd)
+            try:
+                tmp.replace(dest)
+            except Exception:
+                dest.unlink(missing_ok=True)
+                raise
             # Preserve the client's original mtime (sanity-clamped); falls back to upload time.
             try:
                 mtime = float(mtime_ms) / 1000.0
