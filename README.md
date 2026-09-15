@@ -172,7 +172,9 @@ API: `POST /api/sync/check` (which of these sha256 hashes do you lack?) and
 exact duplicates answered with `status=duplicate` and dropped). Uploads may include the
 original file's modification time (`mtime_ms`, epoch milliseconds) — the server stamps the
 stored file with it, so the library keeps "when was this saved" instead of "when was it
-uploaded" (records `added_at` separately).
+uploaded" (records `added_at` separately). The viewer shows the file mtime as the saved date
+(and the ingestion date alongside when they differ); Newest/Oldest browse sorting also goes
+by file mtime, falling back to ingestion time.
 
 ## Style map (cluster visualization)
 

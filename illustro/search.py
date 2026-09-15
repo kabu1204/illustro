@@ -66,7 +66,8 @@ class Searcher:
             exclude_params = list(exclude)
 
         if not include:
-            # No usable tags -> browse mode (sortable; default: import time descending)
+            # No usable tags -> browse mode. Sort by file mtime ("when was this saved",
+            # preserved through sync uploads), falling back to ingestion time.
             base = f"FROM images i WHERE 1=1 {rating_clause} {exclude_clause}"
             params = rating_params + exclude_params
             if sort == "random":
@@ -74,9 +75,9 @@ class Searcher:
                 # SQLite has no XOR operator): consistent pagination within a shuffle, re-seeding reshuffles.
                 order, order_params = "((i.id + ?) * 2654435761) % 4294967296", [int(seed) % 65536]
             elif sort == "old":
-                order, order_params = "i.added_at ASC", []
+                order, order_params = "COALESCE(i.mtime, i.added_at) ASC", []
             else:
-                order, order_params = "i.added_at DESC", []
+                order, order_params = "COALESCE(i.mtime, i.added_at) DESC", []
             total = self.db.conn.execute(f"SELECT COUNT(*) c {base}", params).fetchone()["c"]
             rows = self.db.conn.execute(
                 f"SELECT i.* {base} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -144,6 +145,7 @@ class Searcher:
             "rating": row["rating"],
             "avg_color": row["avg_color"],
             "bytes": row["bytes"],
+            "mtime": row["mtime"],
             "added_at": row["added_at"],
         }
         tags = self.db.tags_for_image(row["id"])

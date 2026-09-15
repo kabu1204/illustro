@@ -665,7 +665,9 @@ function renderViewerSidebar(img) {
       <span class="vrating r-${(r[0] || 'g')}">${esc(r)}</span>
       <span><b>${img.width || '?'}×${img.height || '?'}</b></span>
       <span>${fmtMB(img.bytes)}</span>
-      <span title="Date added">${fmtDate(img.added_at)}</span>
+      <span title="Saved (file modification time)">${fmtDate(img.mtime || img.added_at)}</span>
+      ${img.mtime && img.added_at && Math.abs(img.mtime - img.added_at) > 86400
+        ? `<span title="Added to the library">added ${fmtDate(img.added_at)}</span>` : ''}
       ${img.avg_color ? `<span><span class="swatch" style="background:${esc(img.avg_color)}"></span>${esc(img.avg_color)}</span>` : ''}
     </div>
     <div class="vactions">
