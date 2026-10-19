@@ -121,7 +121,7 @@ python -m illustro.cli reset
 
 `/` focus search · `←`/`→` previous/next image · `Esc` close · **Space** play/pause slideshow.
 The **copy** button next to "Tags" in the viewer sidebar copies all of the image's tags to the
-clipboard (space-separated English, characters first) — ready to paste into a booru search or prompt.
+clipboard (comma-separated English, characters first) — ready to paste into a booru search or prompt.
 The slideshow (3/5/10s interval, fullscreen button included) walks the entire current result
 set — gallery pages are fetched as it goes, finite lists loop. The dice button in the header
 (**Surprise me**) reshuffles the whole library and opens a random image; **Random** in the

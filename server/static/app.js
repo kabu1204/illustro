@@ -692,7 +692,7 @@ function renderViewerSidebar(img) {
       <button id="vRand" title="Jump to a random image from the whole library">Random</button>
     </div>
     ${chars.length ? `<h3>Characters</h3><div>${chars.map(tagHtml).join('')}</div>` : ''}
-    <h3>Tags <button class="mini-copy" id="vCopyTags" title="Copy all tags (space-separated)">copy</button></h3>
+    <h3>Tags <button class="mini-copy" id="vCopyTags" title="Copy all tags (comma-separated)">copy</button></h3>
     <div>${gens.length ? gens.map(tagHtml).join('') : '<span style="color:var(--muted);font-size:13px">Not tagged yet</span>'}</div>
     <p class="uhint">Click a tag to filter · Shift+click to exclude</p>`;
   $('#vSim').onclick = () => {
@@ -711,7 +711,7 @@ function renderViewerSidebar(img) {
     // Sidebar display order: characters first, then general tags
     const names = [...all.filter((t) => t.cat === 4), ...all.filter((t) => t.cat !== 4)]
       .map((t) => t.name);
-    await copyText(names.join(' '));
+    await copyText(names.join(', '));
     toast(`Copied ${names.length} tags`, 'ok');
   };
   vSide.querySelectorAll('.tag').forEach((el) => {
