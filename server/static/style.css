@@ -366,6 +366,10 @@ button.primary:hover { filter: brightness(1.1); background: var(--grad); }
 .tag:hover { border-color: var(--accent); }
 .tag.char { background: rgba(138, 124, 255, .13); border-color: rgba(138, 124, 255, .4); }
 .tag .c { color: var(--muted); font: var(--fs-2xs) var(--mono); margin-left: 5px; }
+.mini-copy {
+  padding: 2px 9px; font-size: var(--fs-2xs); border-radius: 999px;
+  vertical-align: 2px; margin-left: 2px; text-transform: none; letter-spacing: 0;
+}
 .vpos { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
   font: var(--fs-xs) var(--mono); color: var(--muted); background: rgba(20, 22, 30, .8);
   padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line); }

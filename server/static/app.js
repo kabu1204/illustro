@@ -35,6 +35,22 @@ async function api(path, opts) {
   return r.json();
 }
 
+/* navigator.clipboard requires a secure context; on plain-HTTP LAN installs fall
+   back to the legacy textarea + execCommand path. */
+async function copyText(s) {
+  try {
+    await navigator.clipboard.writeText(s);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = s;
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e2) { /* best effort */ }
+    ta.remove();
+  }
+}
+
 function toast(msg, type = '') {
   const box = $('#toasts');
   const t = document.createElement('div');
@@ -676,7 +692,7 @@ function renderViewerSidebar(img) {
       <button id="vRand" title="Jump to a random image from the whole library">Random</button>
     </div>
     ${chars.length ? `<h3>Characters</h3><div>${chars.map(tagHtml).join('')}</div>` : ''}
-    <h3>Tags</h3>
+    <h3>Tags <button class="mini-copy" id="vCopyTags" title="Copy all tags (space-separated)">copy</button></h3>
     <div>${gens.length ? gens.map(tagHtml).join('') : '<span style="color:var(--muted);font-size:13px">Not tagged yet</span>'}</div>
     <p class="uhint">Click a tag to filter · Shift+click to exclude</p>`;
   $('#vSim').onclick = () => {
@@ -688,6 +704,16 @@ function renderViewerSidebar(img) {
   };
   $('#vOrig').onclick = () => window.open('/api/image/' + img.id);
   $('#vRand').onclick = () => surprise();
+  $('#vCopyTags').onclick = async () => {
+    await ensureInfo(img); // tags lazy-load for map/duplicate viewer entries
+    const all = (img.tags || []);
+    if (!all.length) { toast('No tags to copy'); return; }
+    // Sidebar display order: characters first, then general tags
+    const names = [...all.filter((t) => t.cat === 4), ...all.filter((t) => t.cat !== 4)]
+      .map((t) => t.name);
+    await copyText(names.join(' '));
+    toast(`Copied ${names.length} tags`, 'ok');
+  };
   vSide.querySelectorAll('.tag').forEach((el) => {
     el.onclick = (e) => {
       const name = el.dataset.n;
